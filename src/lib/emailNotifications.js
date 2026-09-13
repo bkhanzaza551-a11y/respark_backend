@@ -152,6 +152,23 @@ const fallbackTemplates = {
 
 <p style="color:#64748b; font-size:14px; line-height:1.7; text-align:center; margin:0;">If you need to reschedule or cancel, please contact us at your earliest convenience.</p>`
   },
+  service_reminder_template: {
+    title: "Time for your next {{service_name}}",
+    content: `<div style="text-align:center; margin-bottom:24px;">
+  <div style="display:inline-block; background:linear-gradient(135deg,#ec4899,#db2777); width:56px; height:56px; border-radius:50%; line-height:56px; font-size:24px;">&#10024;</div>
+</div>
+<h2 style="color:#0f172a; font-size:22px; font-weight:700; text-align:center; margin:0 0 8px 0;">Time for your next {{service_name}}!</h2>
+<p style="color:#64748b; text-align:center; font-size:14px; margin:0 0 28px 0;">It's been a while since your last visit to <strong style="color:#0f172a;">{{salon_name}}</strong>.</p>
+
+<div style="background:#fdf2f8; border:1px solid #fbcfe8; border-radius:12px; padding:24px; margin-bottom:24px;">
+  <p style="font-size:15px; color:#334155; text-align:center; margin:0;">
+    We noticed it's time for your <strong>{{service_name}}</strong> based on your last appointment on <strong>{{last_appointment_date}}</strong>.
+    Keeping up with your routine helps maintain the best results!
+  </p>
+</div>
+
+<p style="color:#64748b; font-size:14px; line-height:1.7; text-align:center; margin:0;">Contact our front desk or visit our online booking portal to schedule your next session.</p>`
+  },
   appointment_reminder: {
     title: "Reminder: Upcoming Appointment",
     content: `<div style="text-align:center; margin-bottom:24px;">

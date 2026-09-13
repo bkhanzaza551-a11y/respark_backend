@@ -688,6 +688,94 @@ export const processScheduledFollowUps = async () => {
   return results;
 };
 
+export const processServiceReminders = async () => {
+  const now = new Date();
+  
+  // Get all distinct salonIds that have settings
+  const salonIds = await prisma.salonSetting.findMany({
+    where: { branchId: null },
+    select: { salonId: true }
+  }).then((rows) => rows.map((r) => r.salonId));
+
+  const results = { serviceReminders: 0 };
+
+  for (const salonId of salonIds) {
+    const { emailEnabled } = await getNotificationToggles(salonId).catch(() => ({ emailEnabled: false }));
+    if (!emailEnabled) continue;
+
+    const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+    const appointmentServices = await prisma.appointmentService.findMany({
+      where: {
+        appointment: { salonId, status: "COMPLETED", startAt: { gte: oneYearAgo } },
+        service: { serviceRemainderDays: { gt: 0 } }
+      },
+      include: {
+        appointment: { include: { customer: true, salon: true } },
+        service: true
+      }
+    });
+
+    for (const item of appointmentServices) {
+      if (!item.appointment.customer?.email) continue;
+      
+      const apptDate = new Date(item.appointment.startAt);
+      const remainderDays = item.service.serviceRemainderDays;
+      
+      const dueDate = new Date(apptDate.getTime() + remainderDays * 24 * 60 * 60 * 1000);
+      
+      // If due date is exactly today
+      if (
+        dueDate.getFullYear() === now.getFullYear() &&
+        dueDate.getMonth() === now.getMonth() &&
+        dueDate.getDate() === now.getDate()
+      ) {
+        const alreadySent = await prisma.auditLog.findFirst({
+          where: {
+            salonId,
+            module: "LIFECYCLE",
+            action: "SERVICE_REMINDER_SENT",
+            entityId: item.id // Tie to AppointmentService item to avoid duplicates per service taken
+          }
+        });
+        
+        if (alreadySent) continue;
+        
+        await attemptCustomerTemplateEmail({
+          salonId,
+          toEmail: item.appointment.customer.email,
+          templateType: "service_reminder_template",
+          context: {
+            customerId: item.appointment.customerId,
+            service_name: item.service.name,
+            last_appointment_date: apptDate.toISOString().slice(0, 10),
+            salon_name: item.appointment.salon.name
+          }
+        }).catch(() => {});
+        
+        await createCustomerNotification({
+          salonId,
+          customerId: item.appointment.customerId,
+          title: "Service Reminder",
+          message: `It's time for your next ${item.service.name}! Book an appointment today.`
+        }).catch(() => {});
+        
+        await createAuditLog({
+          salonId,
+          module: "LIFECYCLE",
+          action: "SERVICE_REMINDER_SENT",
+          entityType: "AppointmentService",
+          entityId: item.id,
+          summary: `Service reminder sent for ${item.service.name}`
+        }).catch(() => {});
+        
+        results.serviceReminders++;
+      }
+    }
+  }
+  return results;
+};
+
 let schedulerHandle = null;
 let schedulerRunning = false;
 
@@ -699,6 +787,7 @@ const runEmailAutomationPass = async () => {
     await processAppointmentReminderEmails();
     await processLifecycleNotifications();
     await processScheduledFollowUps();
+    await processServiceReminders();
   } catch (error) {
     console.error("Email automation pass failed", error);
   } finally {
