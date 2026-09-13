@@ -50,7 +50,7 @@ export const createApp = ({
   jsonLimit = process.env.JSON_BODY_LIMIT || "1mb",
   rateLimitWindowMs = parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
   rateLimitMax = parseNumber(process.env.RATE_LIMIT_MAX, 300),
-  trustProxy = process.env.TRUST_PROXY === "true"
+  trustProxy = process.env.TRUST_PROXY ? process.env.TRUST_PROXY === "true" : true
 } = {}) => {
   const app = express();
   const resolvedOrigins = new Set(getAllowedOrigins(allowedOrigins));
