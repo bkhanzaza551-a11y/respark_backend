@@ -359,6 +359,7 @@ export const registerBillingRoutes = (ownerRouter) => {
         where,
         include: {
           customer: { select: { id: true, name: true, phone: true } },
+          branch: { select: { id: true, name: true } },
           items: true,
           payments: true,
           appointment: { select: { id: true, status: true } }
