@@ -1310,7 +1310,7 @@ const pdfSafe = (str) => {
     const footer = settings?.invoiceFooter || "Thank you for visiting.";
     const salonName = customSalonName || inv.salon?.name || inv.branch?.name || "My Salon";
     const salonPhone = sanitizeInvoicePhone(customSalonPhone || inv.branch?.phone || inv.salon?.phone || "");
-    const salonAddress = customSalonAddress || inv.branch?.address || inv.salon?.address || "";
+    const salonAddress = inv.branch?.address || customSalonAddress || inv.salon?.address || "";
     const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const items = inv.items.map((item) => {
@@ -1443,7 +1443,7 @@ const pdfSafe = (str) => {
     const branchName = inv.branch?.name || "";
     const brandName = salonName.toUpperCase();
     const phone = sanitizeInvoicePhone(customSalonPhone || inv.branch?.phone || inv.salon?.phone || "");
-    const salonAddress = customSalonAddress || inv.branch?.address || inv.salon?.address || "";
+    const salonAddress = inv.branch?.address || customSalonAddress || inv.salon?.address || "";
     const currencyCode = inv.salon?.currency || "INR";
 
     const getCurrencySymbol = (code) => {
