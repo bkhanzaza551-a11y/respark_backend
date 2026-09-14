@@ -56,7 +56,7 @@ export const createApp = ({
   const resolvedOrigins = new Set(getAllowedOrigins(allowedOrigins));
 
   app.disable("x-powered-by");
-  if (trustProxy) app.set("trust proxy", 1);
+  if (trustProxy) app.set("trust proxy", true);
 
   morgan.token("req-id", (req) => req.requestId);
   app.use((req, res, next) => {
