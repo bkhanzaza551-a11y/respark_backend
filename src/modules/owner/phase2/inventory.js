@@ -137,47 +137,76 @@ export const registerInventoryRoutes = (ownerRouter) => {
   ownerRouter.patch("/inventory/products/:id", requireFeatureEnabled("inventory"), requireSalonPermission("inventory", "edit"), validate(schemas.product), async (req, res) => {
     const product = await prisma.product.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
     if (!product) return res.status(404).json({ message: "Product not found" });
-    res.json(await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        branchId: req.body.branchId || null,
-        categoryId: req.body.categoryId || null,
-        name: req.body.name,
-        imageUrl: req.body.imageUrl || null,
-        displayImages: req.body.displayImages !== undefined ? req.body.displayImages : product.displayImages,
-        sku: req.body.sku || null,
-        barcode: req.body.barcode || null,
-        productType: req.body.productType,
-        costPrice: req.body.costPrice,
-        sellingPrice: req.body.sellingPrice,
-        salePrice: req.body.salePrice ?? null,
-        minStock: req.body.minStock ?? product.minStock,
-        onFloor: req.body.onFloor ?? product.onFloor,
-        netWeight: req.body.netWeight !== undefined ? req.body.netWeight : product.netWeight,
-        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-        allowNegativeStock: Boolean(req.body.allowNegativeStock),
-        featured: req.body.featured !== undefined ? Boolean(req.body.featured) : product.featured,
-        targetGroup: req.body.targetGroup || product.targetGroup,
-        hideFromCatalogue: req.body.hideFromCatalogue !== undefined ? Boolean(req.body.hideFromCatalogue) : product.hideFromCatalogue,
-        nonDiscountable: req.body.nonDiscountable !== undefined ? Boolean(req.body.nonDiscountable) : product.nonDiscountable,
-        description: req.body.description !== undefined ? req.body.description : product.description,
-        videoLink: req.body.videoLink !== undefined ? req.body.videoLink : product.videoLink,
-        benefits: req.body.benefits !== undefined ? req.body.benefits : product.benefits,
-        ingredients: req.body.ingredients !== undefined ? req.body.ingredients : product.ingredients,
-        usageInstructions: req.body.usageInstructions !== undefined ? req.body.usageInstructions : product.usageInstructions,
-        variations: req.body.variations !== undefined ? req.body.variations : product.variations,
-        weight: req.body.weight !== undefined ? req.body.weight : product.weight,
-        length: req.body.length !== undefined ? req.body.length : product.length,
-        width: req.body.width !== undefined ? req.body.width : product.width,
-        height: req.body.height !== undefined ? req.body.height : product.height,
-        unit: req.body.unit !== undefined ? req.body.unit : product.unit,
-        secondaryUnit: req.body.secondaryUnit !== undefined ? req.body.secondaryUnit : product.secondaryUnit,
-        unitConversion: req.body.unitConversion !== undefined ? req.body.unitConversion : product.unitConversion,
-        discountType: req.body.discountType !== undefined ? req.body.discountType : product.discountType,
-        discountValue: req.body.discountValue !== undefined ? req.body.discountValue : product.discountValue,
-        favourite: req.body.favourite !== undefined ? Boolean(req.body.favourite) : product.favourite
+
+    const data = {
+      branchId: req.body.branchId || null,
+      categoryId: req.body.categoryId || null,
+      name: req.body.name,
+      imageUrl: req.body.imageUrl || null,
+      displayImages: req.body.displayImages !== undefined ? req.body.displayImages : product.displayImages,
+      sku: req.body.sku || null,
+      barcode: req.body.barcode || null,
+      productType: req.body.productType,
+      costPrice: req.body.costPrice,
+      sellingPrice: req.body.sellingPrice,
+      salePrice: req.body.salePrice ?? null,
+      minStock: req.body.minStock ?? product.minStock,
+      onFloor: req.body.onFloor ?? product.onFloor,
+      netWeight: req.body.netWeight !== undefined ? req.body.netWeight : product.netWeight,
+      expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
+      allowNegativeStock: Boolean(req.body.allowNegativeStock),
+      featured: req.body.featured !== undefined ? Boolean(req.body.featured) : product.featured,
+      targetGroup: req.body.targetGroup || product.targetGroup,
+      hideFromCatalogue: req.body.hideFromCatalogue !== undefined ? Boolean(req.body.hideFromCatalogue) : product.hideFromCatalogue,
+      nonDiscountable: req.body.nonDiscountable !== undefined ? Boolean(req.body.nonDiscountable) : product.nonDiscountable,
+      description: req.body.description !== undefined ? req.body.description : product.description,
+      videoLink: req.body.videoLink !== undefined ? req.body.videoLink : product.videoLink,
+      benefits: req.body.benefits !== undefined ? req.body.benefits : product.benefits,
+      ingredients: req.body.ingredients !== undefined ? req.body.ingredients : product.ingredients,
+      usageInstructions: req.body.usageInstructions !== undefined ? req.body.usageInstructions : product.usageInstructions,
+      variations: req.body.variations !== undefined ? req.body.variations : product.variations,
+      weight: req.body.weight !== undefined ? req.body.weight : product.weight,
+      length: req.body.length !== undefined ? req.body.length : product.length,
+      width: req.body.width !== undefined ? req.body.width : product.width,
+      height: req.body.height !== undefined ? req.body.height : product.height,
+      unit: req.body.unit !== undefined ? req.body.unit : product.unit,
+      secondaryUnit: req.body.secondaryUnit !== undefined ? req.body.secondaryUnit : product.secondaryUnit,
+      unitConversion: req.body.unitConversion !== undefined ? req.body.unitConversion : product.unitConversion,
+      discountType: req.body.discountType !== undefined ? req.body.discountType : product.discountType,
+      discountValue: req.body.discountValue !== undefined ? req.body.discountValue : product.discountValue,
+      favourite: req.body.favourite !== undefined ? Boolean(req.body.favourite) : product.favourite
+    };
+
+    let stockChanged = false;
+    let diff = 0;
+    if (req.body.currentStock !== undefined) {
+      const newStock = Number(req.body.currentStock);
+      if (newStock < 0) return res.status(400).json({ message: "Stock cannot be negative" });
+      if (newStock !== Number(product.currentStock)) {
+        stockChanged = true;
+        diff = newStock - Number(product.currentStock);
+        data.currentStock = newStock;
       }
-    }));
+    }
+
+    if (stockChanged) {
+      const result = await prisma.$transaction(async (tx) => {
+        const updated = await tx.product.update({ where: { id: product.id }, data });
+        await createStockMovement(tx, {
+          salonId: req.salonId,
+          branchId: product.branchId,
+          productId: product.id,
+          quantity: diff,
+          movementType: diff > 0 ? "STOCK_IN" : "STOCK_OUT",
+          createdByUserId: req.user.id,
+          note: "Product edit"
+        });
+        return updated;
+      });
+      res.json(result);
+    } else {
+      res.json(await prisma.product.update({ where: { id: product.id }, data }));
+    }
   });
 
   ownerRouter.patch("/inventory/products/:id/archive", requireFeatureEnabled("inventory"), requireSalonPermission("inventory", "delete"), async (req, res) => {
