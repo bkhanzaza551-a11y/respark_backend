@@ -346,7 +346,7 @@ export const registerBillingRoutes = (ownerRouter) => {
             title: "New POS Assignment",
             message: "You have been assigned to a service in a new POS invoice.",
             type: "APPOINTMENT",
-            linkUrl: \/admin/pos/dashboard          }).catch(err => console.error("Failed to notify staff:", err));
+            linkUrl: "/admin/pos/dashboard" }).catch(err => console.error("Failed to notify staff:", err));
         }
       }
 
