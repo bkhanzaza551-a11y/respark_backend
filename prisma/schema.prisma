@@ -375,6 +375,7 @@ model UserSalon {
   uanNumber                      String?
   reportingToId                  String?
   workingHours                   String?
+  shiftId                        String?
   bankName                       String?
   bankBranch                     String?
   accountNumber                  String?
@@ -383,6 +384,7 @@ model UserSalon {
   salon                          Salon                     @relation(fields: [salonId], references: [id])
   branch                         Branch?                   @relation(fields: [branchId], references: [id])
   customRole                     CustomRole?               @relation(fields: [customRoleId], references: [id])
+  shift                          Shift?                    @relation(fields: [shiftId], references: [id])
   serviceAssignments             StaffServiceAssignment[]
   appointmentAssignments         AppointmentServiceStaff[]
   appointmentPrimary             Appointment[]             @relation("AppointmentPrimaryStaff")
@@ -2106,6 +2108,7 @@ model Shift {
   branch         Branch?      @relation(fields: [branchId], references: [id])
   days           ShiftDay[]
   breaks         ShiftBreak[]
+  members        UserSalon[]
 
   @@index([salonId])
   @@index([branchId])

@@ -155,7 +155,7 @@ const createLoginUserForSalon = async (salonId, payload) => {
     name, email, password, salonRole, branchId: rawBranchId, customRoleId, permissions,
     phone, profileNote, avatarUrl, roleTitle, showInCatalog, serviceIds = [],
     attendanceEnabled, attendanceEnrollmentPhotoUrl,
-    joiningDate, designation, uanNumber, reportingToId, workingHours,
+    joiningDate, designation, uanNumber, reportingToId, workingHours, shiftId,
     bankName, bankBranch, accountNumber, ifscCode
   } = payload;
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -216,6 +216,7 @@ const createLoginUserForSalon = async (salonId, payload) => {
         uanNumber: uanNumber || null,
         reportingToId: reportingToId || null,
         workingHours: workingHours || null,
+        shiftId: shiftId || null,
         bankName: bankName || null,
         bankBranch: bankBranch || null,
         accountNumber: accountNumber || null,
@@ -233,7 +234,7 @@ const createLoginUserForSalon = async (salonId, payload) => {
 
     return tx.userSalon.findUnique({
       where: { id: membership.id },
-      include: { user: true, branch: true, customRole: true, serviceAssignments: { include: { service: true } } }
+      include: { user: true, branch: true, customRole: true, shift: true, serviceAssignments: { include: { service: true } } }
     });
   });
 
@@ -1350,7 +1351,7 @@ ownerRouter.get("/users", requireSalonPermission("staff", "view"), async (req, r
   const includeArchived = req.query.includeArchived === "true";
   res.json(await prisma.userSalon.findMany({
     where: { salonId: req.salonId, ...(includeArchived ? {} : { isArchived: false }), ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) },
-    include: { user: true, branch: true, customRole: true, serviceAssignments: { include: { service: true } } },
+    include: { user: true, branch: true, customRole: true, shift: true, serviceAssignments: { include: { service: true } } },
     orderBy: { id: "desc" }
   }));
 });
@@ -1358,7 +1359,7 @@ ownerRouter.get("/staff-users", requireSalonPermission("staff", "view"), async (
   const branchId = normalizeBranchId(req.query.branchId);
   const rows = await prisma.userSalon.findMany({
     where: { salonId: req.salonId, isArchived: false, ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) },
-    include: { user: true, branch: true, customRole: true, serviceAssignments: { include: { service: true } } },
+    include: { user: true, branch: true, customRole: true, shift: true, serviceAssignments: { include: { service: true } } },
     orderBy: { id: "desc" }
   });
   res.json(rows.map((row) => ({
@@ -1486,7 +1487,7 @@ ownerRouter.patch("/users/:id", requireSalonPermission("staff", "edit"), validat
     }
     return tx.userSalon.findUnique({
       where: { id: req.params.id },
-      include: { user: true, branch: true, customRole: true, serviceAssignments: { include: { service: true } } }
+      include: { user: true, branch: true, customRole: true, shift: true, serviceAssignments: { include: { service: true } } }
     });
   });
   res.json(updated);
@@ -1525,6 +1526,7 @@ ownerRouter.patch("/staff-users/:id", requireSalonPermission("staff", "edit"), v
       uanNumber: req.body.uanNumber !== undefined ? (req.body.uanNumber || null) : row.uanNumber,
       reportingToId: req.body.reportingToId !== undefined ? (req.body.reportingToId || null) : row.reportingToId,
       workingHours: req.body.workingHours !== undefined ? (req.body.workingHours || null) : row.workingHours,
+      shiftId: req.body.shiftId !== undefined ? (req.body.shiftId || null) : row.shiftId,
       bankName: req.body.bankName !== undefined ? (req.body.bankName || null) : row.bankName,
       bankBranch: req.body.bankBranch !== undefined ? (req.body.bankBranch || null) : row.bankBranch,
       accountNumber: req.body.accountNumber !== undefined ? (req.body.accountNumber || null) : row.accountNumber,

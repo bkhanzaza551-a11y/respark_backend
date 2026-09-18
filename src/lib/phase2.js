@@ -180,7 +180,7 @@ export const createStockMovement = async (tx, {
   const branchStockAfter = branchStockBefore + delta;
 
   if ((nextStock < 0 || branchStockAfter < 0) && !negativeAllowed) {
-    const error = new Error(`Insufficient stock for ${product.name}`);
+    const error = new Error(`Insufficient stock for ${product.name} (nextStock: ${nextStock}, branchStockAfter: ${branchStockAfter}, currentStock: ${currentStock}, delta: ${delta}, branchStockBefore: ${branchStockBefore})`);
     error.status = 400;
     throw error;
   }

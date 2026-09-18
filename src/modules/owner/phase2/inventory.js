@@ -185,7 +185,6 @@ export const registerInventoryRoutes = (ownerRouter) => {
       if (newStock !== Number(product.currentStock)) {
         stockChanged = true;
         diff = newStock - Number(product.currentStock);
-        data.currentStock = newStock;
       }
     }
 
