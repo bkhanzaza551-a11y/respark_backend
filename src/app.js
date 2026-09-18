@@ -34,8 +34,7 @@ const getAllowedOrigins = (overrideOrigins = null) => {
     process.env.FRONTEND_APP_URLS,
     "https://skillify-frontend.vercel.app",
     "https://skillify-frontend-phi.vercel.app",
-    "https://skillify-frontend-phi.vercel.app",
-    "https://skillify-frontend.vercel.app",
+    "https://respark-frontend-six.vercel.app",
     "http://127.0.0.1:5173",
     "http://localhost:5173"
   ]);
@@ -49,7 +48,7 @@ export const createApp = ({
   allowedOrigins = null,
   jsonLimit = process.env.JSON_BODY_LIMIT || "1mb",
   rateLimitWindowMs = parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
-  rateLimitMax = parseNumber(process.env.RATE_LIMIT_MAX, 300),
+  rateLimitMax = parseNumber(process.env.RATE_LIMIT_MAX, 3000),
   trustProxy = process.env.TRUST_PROXY ? process.env.TRUST_PROXY === "true" : true
 } = {}) => {
   const app = express();
