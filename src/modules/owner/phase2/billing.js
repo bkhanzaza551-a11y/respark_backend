@@ -310,6 +310,20 @@ export const registerBillingRoutes = (ownerRouter) => {
       sendInvoiceAutomationEmails(req.salonId, invoice).catch(err => {
         console.error("Failed to send POS invoice automation emails:", err);
       });
+      // Send notifications to assigned staff
+      if (invoice.items && Array.isArray(invoice.items)) {
+        const staffIds = [...new Set(invoice.items.filter(i => i.staffUserSalonId).map(i => i.staffUserSalonId))];
+        for (const staffId of staffIds) {
+          createStaffNotification({
+            salonId: req.salonId,
+            userSalonId: staffId,
+            title: "New POS Assignment",
+            message: "You have been assigned to a service in a new POS invoice.",
+            type: "APPOINTMENT",
+            linkUrl: \/admin/pos/dashboard          }).catch(err => console.error("Failed to notify staff:", err));
+        }
+      }
+
       res.status(201).json(invoice);
     } catch (error) {
       return sendRouteError(res, error, "Could not create POS invoice");
@@ -322,6 +336,20 @@ export const registerBillingRoutes = (ownerRouter) => {
       sendInvoiceAutomationEmails(req.salonId, invoice).catch(err => {
         console.error("Failed to send invoice automation emails:", err);
       });
+      // Send notifications to assigned staff
+      if (invoice.items && Array.isArray(invoice.items)) {
+        const staffIds = [...new Set(invoice.items.filter(i => i.staffUserSalonId).map(i => i.staffUserSalonId))];
+        for (const staffId of staffIds) {
+          createStaffNotification({
+            salonId: req.salonId,
+            userSalonId: staffId,
+            title: "New POS Assignment",
+            message: "You have been assigned to a service in a new POS invoice.",
+            type: "APPOINTMENT",
+            linkUrl: \/admin/pos/dashboard          }).catch(err => console.error("Failed to notify staff:", err));
+        }
+      }
+
       res.status(201).json(invoice);
     } catch (error) {
       return sendRouteError(res, error, "Could not create invoice");
