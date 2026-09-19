@@ -7,6 +7,7 @@ import { patchRouterForAsync } from "../../lib/async-handler.js";
 import { requireAuth, requireMaintenanceAccess, requireSalonContext, requireSalonPermission } from "../../middlewares/rbac.js";
 import { schemas, validate } from "../../middlewares/validate.js";
 import multer from "multer";
+import ExcelJS from "exceljs";
 
 import { registerPhase2OwnerRoutes } from "./phase2/index.js";
 import { registerPhase3OwnerRoutes } from "./phase3/index.js";
@@ -29,7 +30,7 @@ ownerRouter.use(requireAuth, requireMaintenanceAccess, requireSalonContext, asyn
         return res.status(403).json({ message: "No branch assigned. Contact your salon owner." });
       }
     }
-    const merged = { ...STAFF_SELF_SERVICE_DEFAULTS, ...(req.user.permissions || {}) };
+    const merged = { ...STAFF_SELF_SERVICE_DEFAULTS, ...(req.user.permissions || {}), notifications: Array.from(new Set([...(req.user.permissions?.notifications || []), "view", "edit"])) };
     req.user.permissions = merged;
     req.query.branchId = req.user.branchId;
     req.branchId = req.user.branchId;
@@ -125,7 +126,8 @@ const STAFF_SELF_SERVICE_DEFAULTS = {
   appointments: ["view"],
   customers: ["view"],
   feedback: ["view"],
-  branches: ["view"]
+  branches: ["view"],
+  notifications: ["view", "edit"]
 };
 
 const resolveMembershipPermissions = async (salonId, customRoleId, explicitPermissions) => {
@@ -776,7 +778,6 @@ ownerRouter.get("/customers/export", requireSalonPermission("customers", "view")
   ]);
 
   if (String(format).toLowerCase() === "xls" || String(format).toLowerCase() === "xlsx" || String(format).toLowerCase() === "excel") {
-    const ExcelJS = require("exceljs");
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Customers");
     worksheet.addRow(headers);
@@ -795,50 +796,412 @@ ownerRouter.get("/customers/export", requireSalonPermission("customers", "view")
   }
 });
 
+ownerRouter.get("/customers/test-template", requireSalonPermission("customers", "view"), async (req, res) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Respark ERP";
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet("Customer Test Data");
+
+  const columns = [
+    { header: "Mobile No (Mandatory)", key: "phone", width: 22 },
+    { header: "Name (Mandatory)", key: "name", width: 24 },
+    { header: "Gender (Mandatory)", key: "gender", width: 20 },
+    { header: "Email (Optional)", key: "email", width: 28 },
+    { header: "Date Of Birth (Optional)", key: "dob", width: 22 },
+    { header: "Anniversary (Optional)", key: "anniversary", width: 22 },
+    { header: "Last Visited (Optional)", key: "lastVisited", width: 20 },
+    { header: "Total Orders (Optional)", key: "totalOrders", width: 18 },
+    { header: "Total Purchase Amount (Optional)", key: "totalPurchase", width: 26 },
+    { header: "Average Purchase Amount (Optional)", key: "averagePurchase", width: 26 },
+    { header: "Online Visits (Optional)", key: "onlineVisits", width: 18 },
+    { header: "Loyalty Points (Optional)", key: "loyalty", width: 20 },
+    { header: "Referral Code (Optional)", key: "referralCode", width: 20 },
+    { header: "Advance (Optional)", key: "advance", width: 16 },
+    { header: "Balance (Optional)", key: "balance", width: 16 },
+    { header: "Membership Count (Optional)", key: "membershipCount", width: 24 },
+    { header: "Package Count (Optional)", key: "packageCount", width: 22 },
+    { header: "Source (Optional)", key: "source", width: 20 },
+    { header: "GST Number (Optional)", key: "gst", width: 22 },
+    { header: "Notes (Optional)", key: "notes", width: 35 },
+    { header: "Tags (Optional)", key: "tags", width: 24 }
+  ];
+
+  worksheet.columns = columns;
+
+  const sampleRows = [
+    {
+      phone: "92397146866",
+      name: "Sadia Iqbal",
+      gender: "Female",
+      email: "sadia.iqbal@example.com",
+      dob: "1995-04-12",
+      anniversary: "2020-11-20",
+      lastVisited: "2026-03-18",
+      totalOrders: 3,
+      totalPurchase: 4500,
+      averagePurchase: 1500,
+      onlineVisits: 1,
+      loyalty: 150,
+      referralCode: "SADIA6866",
+      advance: 0,
+      balance: 0,
+      membershipCount: 0,
+      packageCount: 0,
+      source: "Walk-in",
+      gst: "",
+      notes: "Prefers organic hair spa products",
+      tags: "Regular; VIP"
+    },
+    {
+      phone: "92394424948",
+      name: "Hamza Shah",
+      gender: "Male",
+      email: "hamza.shah@example.com",
+      dob: "1990-08-25",
+      anniversary: "",
+      lastVisited: "2026-03-15",
+      totalOrders: 5,
+      totalPurchase: 12500,
+      averagePurchase: 2500,
+      onlineVisits: 2,
+      loyalty: 350,
+      referralCode: "HAMZA4948",
+      advance: 500,
+      balance: 0,
+      membershipCount: 1,
+      packageCount: 1,
+      source: "Instagram",
+      gst: "",
+      notes: "Beard grooming and hair cut regular",
+      tags: "Member; Premium"
+    },
+    {
+      phone: "92320032700",
+      name: "Zoya Malik",
+      gender: "Female",
+      email: "zoya.malik@example.com",
+      dob: "1998-01-30",
+      anniversary: "",
+      lastVisited: "2026-03-10",
+      totalOrders: 8,
+      totalPurchase: 22000,
+      averagePurchase: 2750,
+      onlineVisits: 4,
+      loyalty: 600,
+      referralCode: "ZOYA2700",
+      advance: 1000,
+      balance: 0,
+      membershipCount: 1,
+      packageCount: 2,
+      source: "Referral",
+      gst: "",
+      notes: "Allergic to ammonia hair dye",
+      tags: "Gold Member; High Value"
+    },
+    {
+      phone: "92330292304",
+      name: "Fahad Raza",
+      gender: "Male",
+      email: "fahad.raza@example.com",
+      dob: "1988-12-05",
+      anniversary: "2016-01-15",
+      lastVisited: "2026-02-28",
+      totalOrders: 1,
+      totalPurchase: 1800,
+      averagePurchase: 1800,
+      onlineVisits: 0,
+      loyalty: 50,
+      referralCode: "FAHAD2304",
+      advance: 0,
+      balance: 200,
+      membershipCount: 0,
+      packageCount: 0,
+      source: "Google Search",
+      gst: "",
+      notes: "Evening appointments only",
+      tags: "New Customer"
+    },
+    {
+      phone: "92316918941",
+      name: "Nida Hussain",
+      gender: "Female",
+      email: "nida.h@example.com",
+      dob: "1993-07-19",
+      anniversary: "",
+      lastVisited: "2026-03-01",
+      totalOrders: 2,
+      totalPurchase: 3200,
+      averagePurchase: 1600,
+      onlineVisits: 1,
+      loyalty: 100,
+      referralCode: "NIDA8941",
+      advance: 0,
+      balance: 0,
+      membershipCount: 0,
+      packageCount: 0,
+      source: "Walk-in",
+      gst: "",
+      notes: "Prefers weekend slots",
+      tags: "Regular"
+    },
+    {
+      phone: "92355747179",
+      name: "Kamran Ali",
+      gender: "Male",
+      email: "kamran.ali@example.com",
+      dob: "1991-09-14",
+      anniversary: "2019-04-05",
+      lastVisited: "2026-03-12",
+      totalOrders: 4,
+      totalPurchase: 8900,
+      averagePurchase: 2225,
+      onlineVisits: 0,
+      loyalty: 220,
+      referralCode: "KAMRAN7179",
+      advance: 0,
+      balance: 0,
+      membershipCount: 0,
+      packageCount: 1,
+      source: "Facebook",
+      gst: "",
+      notes: "Skin treatment routine",
+      tags: "Regular; Package Holder"
+    },
+    {
+      phone: "92358594452",
+      name: "Hira Smith",
+      gender: "Female",
+      email: "hira.smith@example.com",
+      dob: "1996-03-22",
+      anniversary: "",
+      lastVisited: "2026-03-16",
+      totalOrders: 6,
+      totalPurchase: 15400,
+      averagePurchase: 2566,
+      onlineVisits: 3,
+      loyalty: 450,
+      referralCode: "HIRA4452",
+      advance: 0,
+      balance: 0,
+      membershipCount: 1,
+      packageCount: 0,
+      source: "Referral",
+      gst: "",
+      notes: "Prefers Senior Stylist",
+      tags: "VIP; Platinum"
+    },
+    {
+      phone: "92329807676",
+      name: "Ibrahim Ahmed",
+      gender: "Male",
+      email: "ibrahim.ahmed@example.com",
+      dob: "1985-11-11",
+      anniversary: "2012-12-12",
+      lastVisited: "2026-03-05",
+      totalOrders: 2,
+      totalPurchase: 4000,
+      averagePurchase: 2000,
+      onlineVisits: 0,
+      loyalty: 80,
+      referralCode: "IBRAHIM7676",
+      advance: 0,
+      balance: 0,
+      membershipCount: 0,
+      packageCount: 0,
+      source: "Walk-in",
+      gst: "",
+      notes: "Monthly haircut",
+      tags: "Regular"
+    }
+  ];
+
+  sampleRows.forEach(row => worksheet.addRow(row));
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 32;
+  headerRow.eachCell((cell, colNumber) => {
+    const isMandatory = colNumber <= 3;
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: isMandatory ? "FF1E3A8A" : "FF1E293B" }
+    };
+    cell.font = {
+      name: "Calibri",
+      size: 11,
+      bold: true,
+      color: { argb: isMandatory ? "FFFFFF00" : "FFFFFFFF" }
+    };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF94A3B8" } },
+      left: { style: "thin", color: { argb: "FF94A3B8" } },
+      bottom: { style: "medium", color: { argb: "FF000000" } },
+      right: { style: "thin", color: { argb: "FF94A3B8" } }
+    };
+  });
+
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  for (let r = 2; r <= sampleRows.length + 1; r++) {
+    const row = worksheet.getRow(r);
+    row.height = 22;
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: "Calibri", size: 10 };
+      cell.alignment = { vertical: "middle", horizontal: colNumber <= 3 ? "left" : "center" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+      };
+      if (r % 2 === 1) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF8FAFC" }
+        };
+      }
+    });
+  }
+
+  const guideSheet = workbook.addWorksheet("Instructions & Guide");
+  guideSheet.views = [{ state: "frozen", ySplit: 1 }];
+  guideSheet.addRow(["Field Name", "Requirement", "Accepted Values / Format", "Description"]);
+  const guideHeader = guideSheet.getRow(1);
+  guideHeader.height = 28;
+  guideHeader.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+
+  const guideData = [
+    ["Mobile No", "MANDATORY", "Numbers (e.g. 92397146866 or 03001234567)", "Unique phone number for customer identification."],
+    ["Name", "MANDATORY", "Text (e.g. Sadia Iqbal)", "Full name of the customer."],
+    ["Gender", "MANDATORY", "Male / Female / Other", "Gender of the customer."],
+    ["Email", "OPTIONAL", "Valid email (e.g. user@example.com)", "Email address for notifications and billing."],
+    ["Date Of Birth", "OPTIONAL", "YYYY-MM-DD (e.g. 1995-04-12)", "Used for birthday wishes and birthday discounts."],
+    ["Anniversary", "OPTIONAL", "YYYY-MM-DD (e.g. 2020-11-20)", "Used for anniversary discounts and offers."],
+    ["Last Visited", "OPTIONAL", "YYYY-MM-DD (e.g. 2026-03-18)", "Date of most recent appointment or invoice."],
+    ["Total Orders", "OPTIONAL", "Number (e.g. 3)", "Total invoices/orders count."],
+    ["Total Purchase Amount", "OPTIONAL", "Number (e.g. 4500)", "Total amount spent by the customer."],
+    ["Average Purchase Amount", "OPTIONAL", "Number (e.g. 1500)", "Average spend per visit."],
+    ["Online Visits", "OPTIONAL", "Number (e.g. 1)", "Count of catalog / web bookings."],
+    ["Loyalty Points", "OPTIONAL", "Number (e.g. 150)", "Current loyalty points balance."],
+    ["Referral Code", "OPTIONAL", "Text (e.g. SADIA6866)", "Customer's unique referral code."],
+    ["Advance", "OPTIONAL", "Number (e.g. 500)", "Advance deposit currently held."],
+    ["Balance", "OPTIONAL", "Number (e.g. 200)", "Outstanding balance amount."],
+    ["Membership Count", "OPTIONAL", "Number (e.g. 1)", "Number of active memberships."],
+    ["Package Count", "OPTIONAL", "Number (e.g. 1)", "Number of active packages."],
+    ["Source", "OPTIONAL", "Walk-in, Instagram, Google, Referral, Facebook", "How the customer found your salon."],
+    ["GST Number", "OPTIONAL", "Text", "Tax identification number if corporate / business."],
+    ["Notes", "OPTIONAL", "Text", "Any customer preferences, allergies, skin notes."],
+    ["Tags", "OPTIONAL", "Semicolon separated (e.g. VIP; Regular)", "Custom labels for CRM segmentation."]
+  ];
+
+  guideData.forEach((row, i) => {
+    const r = guideSheet.addRow(row);
+    r.height = 22;
+    const isMandatory = row[1] === "MANDATORY";
+    r.getCell(1).font = { bold: true };
+    r.getCell(2).font = { bold: true, color: { argb: isMandatory ? "FFDC2626" : "FF059669" } };
+    r.eachCell((c) => {
+      c.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+      };
+      if (i % 2 === 1) {
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      }
+    });
+  });
+
+  guideSheet.columns = [
+    { width: 22 },
+    { width: 16 },
+    { width: 35 },
+    { width: 55 }
+  ];
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="Customers_Test_Data.xlsx"');
+
+  await workbook.xlsx.write(res);
+  res.end();
+});
+
 ownerRouter.post("/customers/import", requireSalonPermission("customers", "create"), upload.single("file"), forceBranchForUploads, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "No file provided" });
   }
 
-  const csvString = req.file.buffer.toString("utf8");
-  
-  const lines = csvString.split(/\r?\n/).map(line => {
-    const result = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"' || char === "'") {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
+  const fileName = (req.file.originalname || "").toLowerCase();
+  const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || req.file.mimetype?.includes("spreadsheet") || req.file.mimetype?.includes("excel");
+
+  let lines = [];
+  if (isExcel) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const worksheet = workbook.worksheets[0];
+    if (worksheet) {
+      worksheet.eachRow((row) => {
+        const rowValues = [];
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          rowValues[colNumber - 1] = cell.text ? cell.text.trim() : (cell.value !== null && cell.value !== undefined ? String(cell.value).trim() : "");
+        });
+        if (rowValues.some(c => c && c.length > 0)) {
+          lines.push(rowValues);
+        }
+      });
     }
-    result.push(current.trim());
-    return result;
-  }).filter(line => line.length > 0 && line.some(col => col.length > 0));
+  } else {
+    const csvString = req.file.buffer.toString("utf8");
+    lines = csvString.split(/\r?\n/).map(line => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"' || char === "'") {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }).filter(line => line.length > 0 && line.some(col => col.length > 0));
+  }
 
   if (lines.length <= 1) {
-    return res.status(400).json({ message: "CSV file is empty or missing headers" });
+    return res.status(400).json({ message: "Uploaded file is empty or missing headers" });
   }
 
   const headers = lines[0].map(h => String(h).toLowerCase().replace(/[^a-z0-9]/g, ""));
   
-  const nameIdx = headers.indexOf("name");
-  const phoneIdx = headers.indexOf("phone") !== -1 ? headers.indexOf("phone") : headers.indexOf("mobileno");
-  const emailIdx = headers.indexOf("email");
-  const genderIdx = headers.indexOf("gender");
-  const dobIdx = headers.indexOf("dateofbirth") !== -1 ? headers.indexOf("dateofbirth") : headers.indexOf("dob");
-  const anniversaryIdx = headers.indexOf("anniversary");
-  const sourceIdx = headers.indexOf("source");
-  const tagsIdx = headers.indexOf("tags");
-  const notesIdx = headers.indexOf("notes");
+  const findHeaderIdx = (...keywords) => {
+    return headers.findIndex(h => keywords.some(k => h.includes(k)));
+  };
+
+  const nameIdx = findHeaderIdx("name");
+  const phoneIdx = findHeaderIdx("phone", "mobileno", "mobile");
+  const emailIdx = findHeaderIdx("email");
+  const genderIdx = findHeaderIdx("gender");
+  const dobIdx = findHeaderIdx("dateofbirth", "dob", "birth");
+  const anniversaryIdx = findHeaderIdx("anniversary");
+  const sourceIdx = findHeaderIdx("source");
+  const tagsIdx = findHeaderIdx("tags");
+  const notesIdx = findHeaderIdx("notes");
 
   if (phoneIdx === -1) {
-    return res.status(400).json({ message: "CSV must contain a 'Phone' or 'Mobile No' column" });
+    return res.status(400).json({ message: "File must contain a 'Phone' or 'Mobile No' column" });
   }
 
   let successCount = 0;
@@ -1264,7 +1627,7 @@ ownerRouter.delete("/customers/:id", requireSalonPermission("customers", "edit")
   ]);
 
   if (invoiceCount > 0) {
-    return res.status(400).json({ message: `Cannot delete customer with ${invoiceCount} invoice(s). Deactivate instead.` });
+    return res.status(400).json({ message: `Cannot delete customer with ${invoiceCount} invoice(s). Deactivate or archive instead.` });
   }
   if (activeMemberships > 0) {
     return res.status(400).json({ message: `Cannot delete customer with ${activeMemberships} active membership(s).` });
@@ -1273,8 +1636,68 @@ ownerRouter.delete("/customers/:id", requireSalonPermission("customers", "edit")
     return res.status(400).json({ message: `Cannot delete customer with ${activePackages} active package(s).` });
   }
 
-  await prisma.customerTimeline.deleteMany({ where: { customerId: row.id } });
-  await prisma.customer.delete({ where: { id: row.id } });
+  const cid = row.id;
+
+  // 1. Customer timelines, notifications, feedback
+  await prisma.customerTimeline.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.customerNotification.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.customerFeedback.deleteMany({ where: { customerId: cid } }).catch(() => {});
+
+  // 2. Loyalty & wallet
+  await prisma.loyaltyTransaction.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.walletTransaction.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.wallet.deleteMany({ where: { customerId: cid } }).catch(() => {});
+
+  // 3. Coupons & gift cards
+  await prisma.couponRedemption.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.giftCardRedemption.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.customerCoupon.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.coupon.updateMany({ where: { partnerCustomerId: cid }, data: { partnerCustomerId: null } }).catch(() => {});
+  await prisma.giftCard.updateMany({ where: { issuedToCustomerId: cid }, data: { issuedToCustomerId: null } }).catch(() => {});
+
+  // 4. Marketing, whatsapp, enquiries
+  await prisma.campaignConversion.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.whatsAppLog.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.referralCode.updateMany({ where: { refereeId: cid }, data: { refereeId: null } }).catch(() => {});
+  await prisma.referralCode.deleteMany({ where: { customerId: cid } }).catch(() => {});
+  await prisma.enquiry.updateMany({ where: { convertedCustomerId: cid }, data: { convertedCustomerId: null } }).catch(() => {});
+
+  // 5. Memberships & packages (including usages)
+  const mems = await prisma.customerMembership.findMany({ where: { customerId: cid }, select: { id: true } });
+  if (mems.length) {
+    const memIds = mems.map(m => m.id);
+    await prisma.membershipUsage.deleteMany({ where: { customerMembershipId: { in: memIds } } }).catch(() => {});
+    await prisma.customerMembership.deleteMany({ where: { id: { in: memIds } } }).catch(() => {});
+  }
+
+  const pkgs = await prisma.customerPackage.findMany({ where: { customerId: cid }, select: { id: true } });
+  if (pkgs.length) {
+    const pkgIds = pkgs.map(p => p.id);
+    await prisma.packageUsage.deleteMany({ where: { customerPackageId: { in: pkgIds } } }).catch(() => {});
+    await prisma.customerPackage.deleteMany({ where: { id: { in: pkgIds } } }).catch(() => {});
+  }
+
+  // 6. Appointments & appointment details
+  const appts = await prisma.appointment.findMany({ where: { customerId: cid }, select: { id: true } });
+  if (appts.length) {
+    const apptIds = appts.map(a => a.id);
+    const apptServices = await prisma.appointmentService.findMany({ where: { appointmentId: { in: apptIds } }, select: { id: true } });
+    if (apptServices.length) {
+      const apptServiceIds = apptServices.map(s => s.id);
+      await prisma.appointmentServiceStaff.deleteMany({ where: { appointmentServiceId: { in: apptServiceIds } } }).catch(() => {});
+    }
+    await prisma.appointmentService.deleteMany({ where: { appointmentId: { in: apptIds } } }).catch(() => {});
+    await prisma.appointmentLog.deleteMany({ where: { appointmentId: { in: apptIds } } }).catch(() => {});
+    await prisma.appointment.deleteMany({ where: { id: { in: apptIds } } }).catch(() => {});
+  }
+
+  // 7. Orders & affiliate
+  await prisma.onlineOrder.updateMany({ where: { customerId: cid }, data: { customerId: null } }).catch(() => {});
+  await prisma.creditPayoutRequest.deleteMany({ where: { partnerId: cid } }).catch(() => {});
+  await prisma.affiliateCreditWallet.deleteMany({ where: { partnerId: cid } }).catch(() => {});
+
+  // 8. Delete customer
+  await prisma.customer.delete({ where: { id: cid } });
 
   await createAuditLog({
     salonId: req.salonId,
@@ -1286,7 +1709,7 @@ ownerRouter.delete("/customers/:id", requireSalonPermission("customers", "edit")
     entityId: row.id,
     reference: row.phone || row.name,
     summary: `Customer ${row.name || row.phone} deleted`
-  });
+  }).catch(() => {});
 
   res.json({ message: "Customer deleted" });
 });
