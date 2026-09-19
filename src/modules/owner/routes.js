@@ -127,7 +127,8 @@ const STAFF_SELF_SERVICE_DEFAULTS = {
   customers: ["view"],
   feedback: ["view"],
   branches: ["view"],
-  notifications: ["view", "edit"]
+  notifications: ["view", "edit"],
+  enquiries: ["view", "create", "edit"]
 };
 
 const resolveMembershipPermissions = async (salonId, customRoleId, explicitPermissions) => {
