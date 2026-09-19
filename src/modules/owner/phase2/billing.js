@@ -313,7 +313,7 @@ export const registerBillingRoutes = (ownerRouter) => {
       // Send notifications to assigned staff
       if (invoice.items && Array.isArray(invoice.items)) {
         const staffIds = [...new Set(invoice.items.filter(i => i.staffUserSalonId).map(i => i.staffUserSalonId))];
-        for (const staffId of staffIds) {
+        for (const staffId of staffIds) { console.log("Creating notification for POS staff:", staffId); await 
           createStaffNotification({
             salonId: req.salonId,
             userSalonId: staffId,
@@ -339,7 +339,7 @@ export const registerBillingRoutes = (ownerRouter) => {
       // Send notifications to assigned staff
       if (invoice.items && Array.isArray(invoice.items)) {
         const staffIds = [...new Set(invoice.items.filter(i => i.staffUserSalonId).map(i => i.staffUserSalonId))];
-        for (const staffId of staffIds) {
+        for (const staffId of staffIds) { console.log("Creating notification for POS staff:", staffId); await 
           createStaffNotification({
             salonId: req.salonId,
             userSalonId: staffId,

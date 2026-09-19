@@ -252,6 +252,18 @@ export const registerAppointmentRoutes = (ownerRouter) => {
 
       const created = await fetchAppointment(req.salonId, createdId);
       // Dispatch: confirm email to customer + notify owner + notify assigned staff
+      const staffIdsToNotify = [...new Set((created.items || []).flatMap(i => (i.assignedStaff || []).map(s => s.userSalonId)))];
+      for (const staffId of staffIdsToNotify) {
+        createStaffNotification({
+          salonId: req.salonId,
+          userSalonId: staffId,
+          title: "New Appointment Assigned",
+          message: `You have a new appointment on ${new Date(body.startAt).toLocaleString()}.`,
+          type: "APPOINTMENT",
+          linkUrl: `/admin/appointments/${created.id}`
+        }).catch(err => console.error("Failed to notify staff:", err));
+      }
+
       void dispatchAppointmentEvent(req.salonId, createdId, {
         toggleKey: "appointmentConfirmedToCustomer",
         templateType: "appointment_confirmation",

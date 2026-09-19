@@ -1,0 +1,1 @@
+import { prisma } from "./src/lib/prisma.js"; async function main() { const salonId = "cmsj31aft0001q1ak6q3au8ty"; const setting = await prisma.salonSetting.findFirst({ where: { salonId, branchId: null }, select: { advancedSettings: true }}); console.log("pushEnabled:", setting?.advancedSettings?.notificationSettings?.pushEnabled); } main().finally(() => prisma.$disconnect());
