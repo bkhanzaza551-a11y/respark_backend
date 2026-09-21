@@ -446,6 +446,7 @@ ownerRouter.patch("/branches/:id/archive", requireSalonPermission("branches", "d
 });
 
 ownerRouter.get("/service-categories/export", requireSalonPermission("services", "view"), async (req, res) => {
+  const { format } = req.query;
   const branchId = normalizeBranchId(req.query.branchId);
   const serviceWhere = { isActive: true, ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) };
   const categories = await prisma.serviceCategory.findMany({
@@ -470,10 +471,10 @@ ownerRouter.get("/service-categories/export", requireSalonPermission("services",
         cat.name,
         "",
         svc.name,
-        svc.price,
-        svc.durationMin,
-        svc.taxRate || "",
-        svc.commissionPct || ""
+        Number(svc.price || 0),
+        Number(svc.durationMin || 30),
+        svc.taxRate ? Number(svc.taxRate) : "",
+        svc.commissionPct ? Number(svc.commissionPct) : ""
       ]);
     }
     for (const sub of cat.children || []) {
@@ -482,19 +483,246 @@ ownerRouter.get("/service-categories/export", requireSalonPermission("services",
           cat.name,
           sub.name,
           svc.name,
-          svc.price,
-          svc.durationMin,
-          svc.taxRate || "",
-          svc.commissionPct || ""
+          Number(svc.price || 0),
+          Number(svc.durationMin || 30),
+          svc.taxRate ? Number(svc.taxRate) : "",
+          svc.commissionPct ? Number(svc.commissionPct) : ""
         ]);
       }
     }
   }
 
-  const csv = buildCsv(headers, rows);
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", "attachment; filename=\"service-categories-export.csv\"");
-  res.send(csv);
+  if (String(format).toLowerCase() === "xlsx" || String(format).toLowerCase() === "xls" || String(format).toLowerCase() === "excel") {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Services");
+    worksheet.addRow(headers);
+    rows.forEach(r => worksheet.addRow(r));
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="services-export.xlsx"');
+    await workbook.xlsx.write(res);
+    res.end();
+  } else {
+    const csv = buildCsv(headers, rows);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="service-categories-export.csv"');
+    res.send(csv);
+  }
+});
+
+ownerRouter.get("/service-categories/test-template", requireSalonPermission("services", "view"), async (req, res) => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Respark ERP";
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet("Service Test Data");
+
+  const columns = [
+    { header: "ServiceName (Mandatory)", key: "name", width: 28 },
+    { header: "Category (Mandatory)", key: "category", width: 22 },
+    { header: "Price (Mandatory)", key: "price", width: 18 },
+    { header: "DurationMin (Mandatory)", key: "durationMin", width: 24 },
+    { header: "Subcategory (Optional)", key: "subcategory", width: 24 },
+    { header: "Gender (Optional)", key: "gender", width: 18 },
+    { header: "TaxRate (Optional)", key: "taxRate", width: 18 },
+    { header: "CommissionPct (Optional)", key: "commissionPct", width: 22 },
+    { header: "Description (Optional)", key: "description", width: 35 },
+    { header: "OnlineBooking (Optional)", key: "onlineBooking", width: 22 }
+  ];
+
+  worksheet.columns = columns;
+
+  const sampleRows = [
+    {
+      name: "Haircut & Beard Styling",
+      category: "Hair Care",
+      price: 1500,
+      durationMin: 45,
+      subcategory: "Men's Grooming",
+      gender: "MALE",
+      taxRate: 0,
+      commissionPct: 15,
+      description: "Premium haircut with hot towel beard shaping",
+      onlineBooking: "YES"
+    },
+    {
+      name: "Keratin Smooth Treatment",
+      category: "Hair Care",
+      price: 8500,
+      durationMin: 120,
+      subcategory: "Chemical Treatments",
+      gender: "FEMALE",
+      taxRate: 5,
+      commissionPct: 20,
+      description: "Formaldehyde-free protein smoothing treatment",
+      onlineBooking: "YES"
+    },
+    {
+      name: "Hydra Deep Cleansing Facial",
+      category: "Skin Care",
+      price: 4500,
+      durationMin: 60,
+      subcategory: "Facials",
+      gender: "UNISEX",
+      taxRate: 0,
+      commissionPct: 15,
+      description: "Multi-step hydrating extraction and serum infusion",
+      onlineBooking: "YES"
+    },
+    {
+      name: "Classic Manicure & Pedicure",
+      category: "Nail Care",
+      price: 2800,
+      durationMin: 60,
+      subcategory: "Hands & Feet",
+      gender: "UNISEX",
+      taxRate: 0,
+      commissionPct: 10,
+      description: "Nail shaping, cuticle care and soothing scrub",
+      onlineBooking: "YES"
+    },
+    {
+      name: "Bridal Makeup & Styling",
+      category: "Makeup & Styling",
+      price: 25000,
+      durationMin: 180,
+      subcategory: "Bridal",
+      gender: "FEMALE",
+      taxRate: 10,
+      commissionPct: 25,
+      description: "HD bridal makeup with hair styling and draping",
+      onlineBooking: "NO"
+    },
+    {
+      name: "Swedish Full Body Massage",
+      category: "Spa & Wellness",
+      price: 5000,
+      durationMin: 60,
+      subcategory: "Massages",
+      gender: "UNISEX",
+      taxRate: 5,
+      commissionPct: 20,
+      description: "Relaxing light to medium pressure body massage",
+      onlineBooking: "YES"
+    },
+    {
+      name: "Hair Root Touch-up",
+      category: "Hair Care",
+      price: 3200,
+      durationMin: 60,
+      subcategory: "Hair Coloring",
+      gender: "UNISEX",
+      taxRate: 0,
+      commissionPct: 12,
+      description: "Ammonia-free grey coverage root touch-up",
+      onlineBooking: "YES"
+    }
+  ];
+
+  sampleRows.forEach(row => worksheet.addRow(row));
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 32;
+  headerRow.eachCell((cell, colNumber) => {
+    const isMandatory = colNumber <= 4;
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: isMandatory ? "FF1E3A8A" : "FF1E293B" }
+    };
+    cell.font = {
+      name: "Calibri",
+      size: 11,
+      bold: true,
+      color: { argb: isMandatory ? "FFFFFF00" : "FFFFFFFF" }
+    };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF94A3B8" } },
+      left: { style: "thin", color: { argb: "FF94A3B8" } },
+      bottom: { style: "medium", color: { argb: "FF000000" } },
+      right: { style: "thin", color: { argb: "FF94A3B8" } }
+    };
+  });
+
+  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  for (let r = 2; r <= sampleRows.length + 1; r++) {
+    const row = worksheet.getRow(r);
+    row.height = 22;
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      cell.font = { name: "Calibri", size: 10 };
+      cell.alignment = { vertical: "middle", horizontal: (colNumber === 1 || colNumber === 2 || colNumber === 5) ? "left" : "center" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+      };
+      if (r % 2 === 1) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF8FAFC" }
+        };
+      }
+    });
+  }
+
+  const guideSheet = workbook.addWorksheet("Instructions & Guide");
+  guideSheet.views = [{ state: "frozen", ySplit: 1 }];
+  guideSheet.addRow(["Field Name", "Requirement", "Accepted Values / Format", "Description"]);
+  const guideHeader = guideSheet.getRow(1);
+  guideHeader.height = 28;
+  guideHeader.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+
+  const guideData = [
+    ["ServiceName", "MANDATORY", "Text (e.g. Haircut & Styling)", "The title or name of the service."],
+    ["Category", "MANDATORY", "Text (e.g. Hair Care, Skin Care)", "Main service category (created automatically if new)."],
+    ["Price", "MANDATORY", "Number (e.g. 1500)", "Selling price of the service."],
+    ["DurationMin", "MANDATORY", "Number in minutes (e.g. 30, 45, 60)", "Service duration in minutes."],
+    ["Subcategory", "OPTIONAL", "Text (e.g. Chemical Treatments)", "Child subcategory under the parent category."],
+    ["Gender", "OPTIONAL", "UNISEX, FEMALE, MALE", "Target gender for this service. Defaults to UNISEX."],
+    ["TaxRate", "OPTIONAL", "Percentage number (e.g. 0, 5, 18)", "Service tax percentage."],
+    ["CommissionPct", "OPTIONAL", "Percentage number (e.g. 10, 15)", "Staff commission percentage on this service."],
+    ["Description", "OPTIONAL", "Text", "Detailed description of what the service includes."],
+    ["OnlineBooking", "OPTIONAL", "YES / NO", "Whether this service is visible for online catalog bookings."]
+  ];
+
+  guideData.forEach((row, i) => {
+    const r = guideSheet.addRow(row);
+    r.height = 22;
+    const isMandatory = row[1] === "MANDATORY";
+    r.getCell(1).font = { bold: true };
+    r.getCell(2).font = { bold: true, color: { argb: isMandatory ? "FFDC2626" : "FF059669" } };
+    r.eachCell((c) => {
+      c.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+      };
+      if (i % 2 === 1) {
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+      }
+    });
+  });
+
+  guideSheet.columns = [
+    { width: 22 },
+    { width: 16 },
+    { width: 35 },
+    { width: 55 }
+  ];
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="Services_Test_Data.xlsx"');
+
+  await workbook.xlsx.write(res);
+  res.end();
 });
 
 ownerRouter.post("/service-categories/import", requireSalonPermission("services", "create"), upload.single("file"), forceBranchForUploads, async (req, res) => {
@@ -502,43 +730,70 @@ ownerRouter.post("/service-categories/import", requireSalonPermission("services"
     return res.status(400).json({ message: "No file provided" });
   }
 
-  const csvString = req.file.buffer.toString("utf8");
-  
-  const lines = csvString.split(/\r?\n/).map(line => {
-    const result = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"' || char === "'") {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        result.push(current.trim());
-        current = "";
-      } else {
-        current += char;
-      }
+  const fileName = (req.file.originalname || "").toLowerCase();
+  const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || req.file.mimetype?.includes("spreadsheet") || req.file.mimetype?.includes("excel");
+
+  let lines = [];
+  if (isExcel) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const worksheet = workbook.worksheets[0];
+    if (worksheet) {
+      worksheet.eachRow((row) => {
+        const rowValues = [];
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          rowValues[colNumber - 1] = cell.text ? cell.text.trim() : (cell.value !== null && cell.value !== undefined ? String(cell.value).trim() : "");
+        });
+        if (rowValues.some(c => c && c.length > 0)) {
+          lines.push(rowValues);
+        }
+      });
     }
-    result.push(current.trim());
-    return result;
-  }).filter(line => line.length > 0 && line.some(col => col.length > 0));
+  } else {
+    const csvString = req.file.buffer.toString("utf8");
+    lines = csvString.split(/\r?\n/).map(line => {
+      const result = [];
+      let current = "";
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"' || char === "'") {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    }).filter(line => line.length > 0 && line.some(col => col.length > 0));
+  }
 
   if (lines.length <= 1) {
-    return res.status(400).json({ message: "CSV file is empty or missing headers" });
+    return res.status(400).json({ message: "Uploaded file is empty or missing headers" });
   }
 
   const headers = lines[0].map(h => String(h).toLowerCase().replace(/[^a-z0-9]/g, ""));
   
-  const catIdx = headers.indexOf("category");
-  const subIdx = headers.indexOf("subcategory");
-  const nameIdx = headers.indexOf("servicename") !== -1 ? headers.indexOf("servicename") : headers.indexOf("name");
-  const priceIdx = headers.indexOf("price");
-  const durationIdx = headers.indexOf("durationmin") !== -1 ? headers.indexOf("durationmin") : headers.indexOf("duration");
-  const taxIdx = headers.indexOf("taxrate");
-  const commIdx = headers.indexOf("commissionpct") !== -1 ? headers.indexOf("commissionpct") : headers.indexOf("commission");
+  const findHeaderIdx = (...keywords) => {
+    return headers.findIndex(h => keywords.some(k => h.includes(k)));
+  };
+
+  const catIdx = findHeaderIdx("category");
+  const subIdx = findHeaderIdx("subcategory");
+  const nameIdx = findHeaderIdx("servicename", "name", "service");
+  const priceIdx = findHeaderIdx("price", "mrp", "rate");
+  const durationIdx = findHeaderIdx("durationmin", "duration", "time");
+  const taxIdx = findHeaderIdx("taxrate", "tax");
+  const commIdx = findHeaderIdx("commissionpct", "commission");
+  const genderIdx = findHeaderIdx("gender");
+  const descIdx = findHeaderIdx("description", "desc");
+  const onlineIdx = findHeaderIdx("onlinebooking", "online");
 
   if (catIdx === -1 || nameIdx === -1 || priceIdx === -1) {
-    return res.status(400).json({ message: "CSV must contain Category, ServiceName, and Price columns" });
+    return res.status(400).json({ message: "File must contain Category, ServiceName, and Price columns" });
   }
 
   let successCount = 0;
@@ -1619,7 +1874,13 @@ ownerRouter.get("/customers/:id", requireSalonPermission("customers", "view"), a
 
 ownerRouter.delete("/customers/:id", requireSalonPermission("customers", "edit"), async (req, res) => {
   const row = await prisma.customer.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
-  if (!row) return res.status(404).json({ message: "Customer not found" });
+  if (!row) {
+    const anyCustomer = await prisma.customer.findUnique({ where: { id: req.params.id } });
+    if (!anyCustomer) {
+      return res.json({ success: true, message: "Customer already removed" });
+    }
+    return res.status(403).json({ message: "Unauthorized to delete customer" });
+  }
 
   const [invoiceCount, activeMemberships, activePackages] = await Promise.all([
     prisma.invoice.count({ where: { customerId: row.id } }),
