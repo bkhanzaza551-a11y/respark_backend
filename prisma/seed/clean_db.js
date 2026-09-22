@@ -4,38 +4,8 @@ import { defaultOwnerPermissions } from "../../src/lib/permissions.js";
 
 const prisma = new PrismaClient();
 
-const defaultManagerPermissions = {
-  dashboard: ["view", "edit"],
-  appointments: ["view", "create", "edit"],
-  services: ["view", "create", "edit"],
-  staff: ["view", "create", "edit"],
-  staffSchedule: ["view", "create", "edit"],
-  customers: ["view", "create", "edit"],
-  pos: ["view", "create"],
-  invoices: ["view", "create", "edit"],
-  payments: ["view", "create", "edit"],
-  inventory: ["view", "create", "edit"],
-  purchases: ["view", "create", "edit"],
-  memberships: ["view", "create", "edit"],
-  packages: ["view", "create", "edit"],
-  reports: ["view"],
-  advancedReports: ["view"],
-  catalog: ["view"],
-  orders: ["view", "create", "edit"],
-  loyalty: ["view", "create", "edit"],
-  couponsGiftCards: ["view", "create", "edit"],
-  feedback: ["view", "create", "edit"],
-  enquiries: ["view", "create", "edit"],
-  expenses: ["view", "create", "edit", "approve"],
-  attendance: ["view", "create", "edit"],
-  notifications: ["view", "create", "edit"],
-  auditLogs: ["view"],
-  myDashboard: ["view"],
-  myAppointments: ["view", "edit"],
-  mySchedule: ["view"],
-  myProfile: ["view", "edit"],
-  myAttendance: ["view", "create", "edit"]
-};
+const defaultManagerPermissions = { ...defaultOwnerPermissions };
+delete defaultManagerPermissions.branches;
 
 async function main() {
   console.log("=== STARTING DATABASE CLEANUP & RESET (ZERO BRANCHES) ===");
