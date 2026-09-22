@@ -50,8 +50,9 @@ authRouter.post("/register", validate(schemas.register), async (req, res) => {
 
 authRouter.post("/login", validate(schemas.login), async (req, res) => {
   const { email, password, loginAccessToken } = req.body;
-  const user = await prisma.user.findUnique({
-    where: { email },
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: cleanEmail, mode: "insensitive" } },
     include: {
       memberships: {
         include: {

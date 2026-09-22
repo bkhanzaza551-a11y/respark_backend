@@ -26,16 +26,16 @@ ownerRouter.use(requireAuth, requireMaintenanceAccess, requireSalonContext, asyn
       if (firstBranch) {
         await prisma.userSalon.update({ where: { id: req.user.membershipId }, data: { branchId: firstBranch.id } });
         req.user.branchId = firstBranch.id;
-      } else {
-        return res.status(403).json({ message: "No branch assigned. Contact your salon owner." });
       }
     }
     const merged = { ...STAFF_SELF_SERVICE_DEFAULTS, ...(req.user.permissions || {}), notifications: Array.from(new Set([...(req.user.permissions?.notifications || []), "view", "edit"])) };
     req.user.permissions = merged;
-    req.query.branchId = req.user.branchId;
-    req.branchId = req.user.branchId;
-    if (req.body && typeof req.body === "object") {
-      req.body.branchId = req.user.branchId;
+    if (req.user.branchId) {
+      req.query.branchId = req.user.branchId;
+      req.branchId = req.user.branchId;
+      if (req.body && typeof req.body === "object") {
+        req.body.branchId = req.user.branchId;
+      }
     }
   }
   next();
