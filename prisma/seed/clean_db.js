@@ -310,14 +310,14 @@ async function main() {
   console.log("Created Manager CustomRole:", managerRole.id);
 
   // 5. Create 1 Staff as Manager (NO BRANCH)
-  const managerEmail = "manager@ashokagroup.org";
-  const managerPasswordRaw = "Manager@123";
+  const managerEmail = "das@ashokagroup.org.in";
+  const managerPasswordRaw = "Ashoka#1969";
   const managerPasswordHash = await bcrypt.hash(managerPasswordRaw, 10);
 
   const managerUser = await prisma.user.create({
     data: {
       email: managerEmail,
-      name: "Salon Manager",
+      name: "Das",
       systemRole: "SALON_USER",
       passwordHash: managerPasswordHash,
       isActive: true,
