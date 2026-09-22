@@ -4,8 +4,41 @@ import { defaultOwnerPermissions } from "../../src/lib/permissions.js";
 
 const prisma = new PrismaClient();
 
+const defaultManagerPermissions = {
+  dashboard: ["view", "edit"],
+  appointments: ["view", "create", "edit"],
+  services: ["view", "create", "edit"],
+  staff: ["view", "create", "edit"],
+  staffSchedule: ["view", "create", "edit"],
+  customers: ["view", "create", "edit"],
+  pos: ["view", "create"],
+  invoices: ["view", "create", "edit"],
+  payments: ["view", "create", "edit"],
+  inventory: ["view", "create", "edit"],
+  purchases: ["view", "create", "edit"],
+  memberships: ["view", "create", "edit"],
+  packages: ["view", "create", "edit"],
+  reports: ["view"],
+  advancedReports: ["view"],
+  catalog: ["view"],
+  orders: ["view", "create", "edit"],
+  loyalty: ["view", "create", "edit"],
+  couponsGiftCards: ["view", "create", "edit"],
+  feedback: ["view", "create", "edit"],
+  enquiries: ["view", "create", "edit"],
+  expenses: ["view", "create", "edit", "approve"],
+  attendance: ["view", "create", "edit"],
+  notifications: ["view", "create", "edit"],
+  auditLogs: ["view"],
+  myDashboard: ["view"],
+  myAppointments: ["view", "edit"],
+  mySchedule: ["view"],
+  myProfile: ["view", "edit"],
+  myAttendance: ["view", "create", "edit"]
+};
+
 async function main() {
-  console.log("=== STARTING DATABASE CLEANUP & RESET ===");
+  console.log("=== STARTING DATABASE CLEANUP & RESET (ZERO BRANCHES) ===");
 
   // Helper to safely truncate/delete tables
   const clearTable = async (table) => {
@@ -87,17 +120,22 @@ async function main() {
     "CatalogAnalyticsEvent",
     "CatalogOffer",
     "CatalogBanner",
+    "CatalogSetting",
+    "SalonSetting",
+    "LoyaltyRule",
     "PasswordSetupToken",
     "DemoLead",
     "UserSalon",
-    "User"
+    "User",
+    "CustomRole",
+    "Branch"
   ];
 
   for (const tbl of tablesToClear) {
     await clearTable(tbl);
   }
 
-  console.log("\n=== ALL DUMMY DATA AND PREVIOUS USERS CLEARED ===");
+  console.log("\n=== ALL DUMMY DATA, BRANCHES, AND OLD USERS CLEARED ===");
 
   // 1. Ensure Salon "Skillify" exists and is active
   let salon = await prisma.salon.findFirst({
@@ -162,27 +200,7 @@ async function main() {
     console.log("Updated Salon Skillify:", salon.id);
   }
 
-  // 2. Ensure an active Main Branch exists for Skillify
-  let mainBranch = await prisma.branch.findFirst({
-    where: { salonId: salon.id, isActive: true }
-  });
-
-  if (!mainBranch) {
-    mainBranch = await prisma.branch.create({
-      data: {
-        salonId: salon.id,
-        name: "Main Branch",
-        address: "Skillify Salon",
-        phone: "+919000442442",
-        isActive: true
-      }
-    });
-    console.log("Created Main Branch:", mainBranch.id);
-  } else {
-    console.log("Found Active Branch:", mainBranch.name, mainBranch.id);
-  }
-
-  // 3. Ensure an active plan and subscription exist with high limits
+  // 2. Ensure an active plan and subscription exist with high limits
   let plan = await prisma.plan.findFirst({
     where: { name: "Free Trial" }
   });
@@ -244,7 +262,7 @@ async function main() {
     console.log("Updated Subscription:", sub.id);
   }
 
-  // 4. Create the requested Super Admin / Salon Owner user
+  // 3. Create the Super Admin / Salon Owner user (NO BRANCH)
   const adminEmail = "vipin@ashokagroup.org";
   const adminPasswordRaw = "9000442442";
   const passwordHash = await bcrypt.hash(adminPasswordRaw, 10);
@@ -263,168 +281,79 @@ async function main() {
 
   console.log("Created Super Admin User:", adminUser.id, adminUser.email);
 
-  // 5. Connect user to Skillify salon as SALON_OWNER
-  const userSalon = await prisma.userSalon.create({
+  const adminUserSalon = await prisma.userSalon.create({
     data: {
       userId: adminUser.id,
       salonId: salon.id,
       salonRole: "SALON_OWNER",
       roleTitle: "Super Admin",
-      branchId: mainBranch.id,
+      branchId: null,
+      customRoleId: null,
       permissions: defaultOwnerPermissions,
       isArchived: false,
       attendanceEnabled: true
     }
   });
 
-  console.log("Connected User to Salon Skillify as SALON_OWNER:", userSalon.id);
+  console.log("Connected User to Salon Skillify as SALON_OWNER (branchId: null):", adminUserSalon.id);
 
-  // 6. Ensure default Manager role and Manager staff user
-  const defaultManagerPermissions = {
-    dashboard: ["view", "edit"],
-    appointments: ["view", "create", "edit"],
-    services: ["view", "create", "edit"],
-    staff: ["view", "create", "edit"],
-    staffSchedule: ["view", "create", "edit"],
-    customers: ["view", "create", "edit"],
-    pos: ["view", "create"],
-    invoices: ["view", "create", "edit"],
-    payments: ["view", "create", "edit"],
-    inventory: ["view", "create", "edit"],
-    purchases: ["view", "create", "edit"],
-    memberships: ["view", "create", "edit"],
-    packages: ["view", "create", "edit"],
-    reports: ["view"],
-    advancedReports: ["view"],
-    catalog: ["view"],
-    orders: ["view", "create", "edit"],
-    loyalty: ["view", "create", "edit"],
-    couponsGiftCards: ["view", "create", "edit"],
-    feedback: ["view", "create", "edit"],
-    enquiries: ["view", "create", "edit"],
-    expenses: ["view", "create", "edit", "approve"],
-    attendance: ["view", "create", "edit"],
-    notifications: ["view", "create", "edit"],
-    auditLogs: ["view"],
-    myDashboard: ["view"],
-    myAppointments: ["view", "edit"],
-    mySchedule: ["view"],
-    myProfile: ["view", "edit"],
-    myAttendance: ["view", "create", "edit"]
-  };
-
-  let managerRole = await prisma.customRole.findFirst({
-    where: { salonId: salon.id, name: "Manager" }
+  // 4. Create single default CustomRole: Manager
+  const managerRole = await prisma.customRole.create({
+    data: {
+      salonId: salon.id,
+      name: "Manager",
+      description: "Default operational manager with permissions for POS, appointments, inventory, staff, and reports",
+      permissions: defaultManagerPermissions,
+      isSystemPreset: true
+    }
   });
+  console.log("Created Manager CustomRole:", managerRole.id);
 
-  if (!managerRole) {
-    managerRole = await prisma.customRole.create({
-      data: {
-        salonId: salon.id,
-        name: "Manager",
-        description: "Default operational manager with permissions for POS, appointments, inventory, staff, and reports",
-        permissions: defaultManagerPermissions,
-        isSystemPreset: true
-      }
-    });
-  } else {
-    managerRole = await prisma.customRole.update({
-      where: { id: managerRole.id },
-      data: {
-        description: "Default operational manager with permissions for POS, appointments, inventory, staff, and reports",
-        permissions: defaultManagerPermissions
-      }
-    });
-  }
-
+  // 5. Create 1 Staff as Manager (NO BRANCH)
   const managerEmail = "manager@ashokagroup.org";
   const managerPasswordRaw = "Manager@123";
   const managerPasswordHash = await bcrypt.hash(managerPasswordRaw, 10);
 
-  let managerUser = await prisma.user.findUnique({
-    where: { email: managerEmail }
+  const managerUser = await prisma.user.create({
+    data: {
+      email: managerEmail,
+      name: "Salon Manager",
+      systemRole: "SALON_USER",
+      passwordHash: managerPasswordHash,
+      isActive: true,
+      passwordSetupRequired: false,
+      isDemoAccount: false
+    }
   });
 
-  if (managerUser) {
-    managerUser = await prisma.user.update({
-      where: { id: managerUser.id },
-      data: {
-        name: "Salon Manager",
-        passwordHash: managerPasswordHash,
-        systemRole: "SALON_USER",
-        isActive: true,
-        passwordSetupRequired: false,
-        isDemoAccount: false
-      }
-    });
-  } else {
-    managerUser = await prisma.user.create({
-      data: {
-        email: managerEmail,
-        name: "Salon Manager",
-        systemRole: "SALON_USER",
-        passwordHash: managerPasswordHash,
-        isActive: true,
-        passwordSetupRequired: false,
-        isDemoAccount: false
-      }
-    });
-  }
-
-  let managerMembership = await prisma.userSalon.findFirst({
-    where: { userId: managerUser.id, salonId: salon.id }
+  const managerMembership = await prisma.userSalon.create({
+    data: {
+      userId: managerUser.id,
+      salonId: salon.id,
+      salonRole: "MANAGER",
+      roleTitle: "Manager",
+      branchId: null,
+      customRoleId: managerRole.id,
+      permissions: defaultManagerPermissions,
+      attendanceEnabled: true,
+      showInCatalog: true,
+      isArchived: false
+    }
   });
 
-  if (managerMembership) {
-    managerMembership = await prisma.userSalon.update({
-      where: { id: managerMembership.id },
-      data: {
-        salonRole: "MANAGER",
-        roleTitle: "Manager",
-        branchId: mainBranch.id,
-        customRoleId: managerRole.id,
-        permissions: defaultManagerPermissions,
-        attendanceEnabled: true,
-        showInCatalog: true,
-        isArchived: false
-      }
-    });
-  } else {
-    managerMembership = await prisma.userSalon.create({
-      data: {
-        userId: managerUser.id,
-        salonId: salon.id,
-        salonRole: "MANAGER",
-        roleTitle: "Manager",
-        branchId: mainBranch.id,
-        customRoleId: managerRole.id,
-        permissions: defaultManagerPermissions,
-        attendanceEnabled: true,
-        showInCatalog: true,
-        isArchived: false,
-        phone: "+919000442443"
-      }
-    });
-  }
+  console.log("Created Manager User & Membership (branchId: null):", managerUser.email, managerMembership.id);
 
-  console.log("Created/Updated Manager User & Membership:", managerUser.email, managerMembership.id);
-
-  // 7. Verification test
-  const verifyUser = await prisma.user.findUnique({
-    where: { email: adminEmail },
-    include: { memberships: { include: { salon: true } } }
-  });
-
-  const isPasswordValid = await bcrypt.compare(adminPasswordRaw, verifyUser.passwordHash);
+  // 6. Verification
+  const branchCount = await prisma.branch.count();
+  const userCount = await prisma.user.count();
+  const roleCount = await prisma.customRole.count();
 
   console.log("\n=== VERIFICATION SUMMARY ===");
-  console.log("Admin Email:", verifyUser.email);
-  console.log("System Role:", verifyUser.systemRole);
-  console.log("Password Valid:", isPasswordValid);
-  console.log("Salon Name:", verifyUser.memberships[0]?.salon?.name);
-  console.log("Salon Role:", verifyUser.memberships[0]?.salonRole);
-  console.log("Manager Email:", managerEmail);
-  console.log("Manager Password:", managerPasswordRaw);
+  console.log("Total Branches in DB:", branchCount);
+  console.log("Total Users in DB:", userCount);
+  console.log("Total Custom Roles in DB:", roleCount);
+  console.log("Super Admin Email:", adminEmail, "Password:", adminPasswordRaw);
+  console.log("Manager Email:", managerEmail, "Password:", managerPasswordRaw);
   console.log("=== DATABASE RESET COMPLETE ===");
 }
 
