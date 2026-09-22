@@ -518,7 +518,6 @@ export const registerAppointmentRoutes = (ownerRouter) => {
 
       // Send notification to the newly assigned staff
       if (staffId) {
-        const { createStaffNotification } = await import("../phase4/communications.js").catch(() => ({}));
         if (createStaffNotification) {
           createStaffNotification({
             salonId: req.salonId,
