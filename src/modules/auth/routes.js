@@ -94,11 +94,9 @@ authRouter.post("/login", validate(schemas.login), async (req, res) => {
   const activeMemberships = sortMemberships(
     (user.memberships || []).filter((membership) => membership?.salon?.status !== "SUSPENDED")
   );
-  const membership = user.systemRole === "SUPER_ADMIN"
-    ? null
-    : requestedSalonId
-      ? activeMemberships.find((item) => item.salonId === requestedSalonId)
-      : activeMemberships[0] || null;
+  const membership = requestedSalonId
+    ? activeMemberships.find((item) => item.salonId === requestedSalonId)
+    : (activeMemberships[0] || null);
 
   if (membership?.salonId) {
     await runExpiredDemoCleanup({ actorName: "LOGIN_CHECK", salonId: membership.salonId });

@@ -271,7 +271,7 @@ async function main() {
     data: {
       email: adminEmail,
       name: "Vipin",
-      systemRole: "SUPER_ADMIN",
+      systemRole: "SALON_USER",
       passwordHash,
       isActive: true,
       passwordSetupRequired: false,
