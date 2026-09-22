@@ -879,8 +879,6 @@ export const registerOperationsRoutes = (ownerRouter) => {
           await prisma.userSalon.update({ where: { id: membership.id }, data: { branchId: fallbackBranch.id } });
           membership.branchId = fallbackBranch.id;
           membership.branch = fallbackBranch;
-        } else {
-          return res.status(400).json({ message: "No active branch found. Please create a branch first." });
         }
       }
       const existing = await prisma.attendanceRecord.findFirst({
@@ -893,12 +891,18 @@ export const registerOperationsRoutes = (ownerRouter) => {
       if (existing) return res.status(409).json({ message: "Attendance has already been marked today." });
       const accuracyMeters = Number(req.body.accuracyMeters || 0);
       const isAccurateGPS = accuracyMeters > 0 && accuracyMeters <= 1000;
-      const { distance, geoStatus } = validateGeofence({
-        branch: membership.branch,
-        latitude: req.body.latitude,
-        longitude: req.body.longitude
-      });
-      if (isAccurateGPS && geoStatus === "OUTSIDE") return res.status(400).json({ message: `You are ${Math.round(distance)}m from the salon. Allowed radius: ${Math.round(Number(membership.branch?.geofenceRadiusMeters || 200))}m. Please move closer.` });
+      let distance = 0;
+      let geoStatus = "NOT_CAPTURED";
+      if (membership.branch) {
+        const geoResult = validateGeofence({
+          branch: membership.branch,
+          latitude: req.body.latitude,
+          longitude: req.body.longitude
+        });
+        distance = geoResult.distance;
+        geoStatus = geoResult.geoStatus;
+        if (isAccurateGPS && geoStatus === "OUTSIDE") return res.status(400).json({ message: `You are ${Math.round(distance)}m from the salon. Allowed radius: ${Math.round(Number(membership.branch?.geofenceRadiusMeters || 200))}m. Please move closer.` });
+      }
       const now = new Date();
       const created = await prisma.attendanceRecord.create({
         data: {
@@ -983,8 +987,6 @@ export const registerOperationsRoutes = (ownerRouter) => {
           await prisma.userSalon.update({ where: { id: membership.id }, data: { branchId: fallbackBranch.id } });
           membership.branchId = fallbackBranch.id;
           membership.branch = fallbackBranch;
-        } else {
-          return res.status(400).json({ message: "No active branch found. Please create a branch first." });
         }
       }
       if (settings.checkoutSelfieRequired && !req.body.selfieUrl) return res.status(400).json({ message: "Camera selfie is required." });
@@ -997,12 +999,18 @@ export const registerOperationsRoutes = (ownerRouter) => {
       if (!row) return res.status(404).json({ message: "Open attendance record not found" });
       const accuracyMeters = Number(req.body.accuracyMeters || 0);
       const isAccurateGPS = accuracyMeters > 0 && accuracyMeters <= 1000;
-      const { distance, geoStatus } = validateGeofence({
-        branch: membership.branch,
-        latitude: req.body.latitude,
-        longitude: req.body.longitude
-      });
-      if (isAccurateGPS && geoStatus === "OUTSIDE") return res.status(400).json({ message: `You are ${Math.round(distance)}m from the salon. Allowed radius: ${Math.round(Number(membership.branch?.geofenceRadiusMeters || 200))}m. Please move closer.` });
+      let distance = 0;
+      let geoStatus = "NOT_CAPTURED";
+      if (membership.branch) {
+        const geoResult = validateGeofence({
+          branch: membership.branch,
+          latitude: req.body.latitude,
+          longitude: req.body.longitude
+        });
+        distance = geoResult.distance;
+        geoStatus = geoResult.geoStatus;
+        if (isAccurateGPS && geoStatus === "OUTSIDE") return res.status(400).json({ message: `You are ${Math.round(distance)}m from the salon. Allowed radius: ${Math.round(Number(membership.branch?.geofenceRadiusMeters || 200))}m. Please move closer.` });
+      }
       const checkOutAt = new Date();
       if (new Date(checkOutAt) <= new Date(row.checkInAt)) return res.status(400).json({ message: "Check-out time cannot be before check-in time." });
       const workedMinutes = roundMinutesDiff(row.checkInAt, checkOutAt);
