@@ -474,6 +474,70 @@ export const registerAppointmentRoutes = (ownerRouter) => {
     res.json(await fetchAppointment(req.salonId, appointment.id));
   });
 
+
+  ownerRouter.patch("/appointments/:id/assign-staff", requireFeatureEnabled("appointments"), requireSalonPermission("appointments", "edit"), async (req, res) => {
+    try {
+      const { staffId, startAt, endAt } = req.body;
+      const appointment = await fetchAppointment(req.salonId, req.params.id);
+      if (!appointment) return res.status(404).json({ message: "Appointment not found" });
+
+      await prisma.$transaction(async (tx) => {
+        // Update appointment times
+        await tx.appointment.update({
+          where: { id: appointment.id },
+          data: { 
+            startAt: new Date(startAt), 
+            endAt: new Date(endAt),
+            status: "CONFIRMED"
+          }
+        });
+
+        // Update services and staff
+        for (const item of appointment.items) {
+          await tx.appointmentService.update({
+            where: { id: item.id },
+            data: { startAt: new Date(startAt), endAt: new Date(endAt) }
+          });
+          
+          await tx.appointmentServiceStaff.deleteMany({
+            where: { appointmentServiceId: item.id }
+          });
+
+          if (staffId) {
+            await tx.appointmentServiceStaff.create({
+              data: {
+                appointmentServiceId: item.id,
+                userSalonId: staffId
+              }
+            });
+          }
+        }
+
+        await logAppointmentChange(tx, appointment.id, req.user?.id, "UPDATED", appointment.status, "CONFIRMED", "Staff assigned and scheduled");
+      });
+
+      // Send notification to the newly assigned staff
+      if (staffId) {
+        const { createStaffNotification } = await import("../phase4/communications.js").catch(() => ({}));
+        if (createStaffNotification) {
+          createStaffNotification({
+            salonId: req.salonId,
+            userSalonId: staffId,
+            title: "New Appointment Assigned",
+            message: `You have been assigned an appointment on ${new Date(startAt).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })}.`,
+            type: "APPOINTMENT",
+            linkUrl: `/admin/my-appointments`
+          }).catch(err => console.error("Failed to notify staff:", err));
+        }
+      }
+
+      res.json(await fetchAppointment(req.salonId, appointment.id));
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Could not assign staff" });
+    }
+  });
+
   ownerRouter.post("/appointments/:id/cancel", requireFeatureEnabled("appointments"), requireSalonPermission("appointments", "edit"), validate(schemas.appointmentNote), async (req, res) => {
     const appointment = await fetchAppointment(req.salonId, req.params.id);
     if (!appointment) return res.status(404).json({ message: "Appointment not found" });
