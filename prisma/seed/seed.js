@@ -5,8 +5,8 @@ import { defaultOwnerPermissions } from "../../src/lib/permissions.js";
 const prisma = new PrismaClient();
 
 async function main() {
-  const superAdminEmail = "superadmin@skillify.local";
-  const ownerEmail = "owner@skillify.local";
+  const superAdminEmail = "vipin@ashokagroup.org";
+  const superAdminPassword = "9000442442";
 
   console.log("Cleaning up existing database records...");
 
@@ -94,18 +94,10 @@ async function main() {
   const superAdmin = await prisma.user.create({
     data: {
       email: superAdminEmail,
-      name: "Super Admin",
+      name: "Vipin",
       systemRole: "SUPER_ADMIN",
-      passwordHash: await bcrypt.hash("Admin@123", 10)
-    }
-  });
-
-  const owner = await prisma.user.create({
-    data: {
-      email: ownerEmail,
-      name: "Salon Owner",
-      systemRole: "SALON_USER",
-      passwordHash: await bcrypt.hash("Owner@123", 10)
+      passwordHash: await bcrypt.hash(superAdminPassword, 10),
+      isActive: true
     }
   });
 
@@ -113,19 +105,19 @@ async function main() {
 
   const salon = await prisma.salon.create({
     data: {
-      name: "Demo Salon",
-      slug: "demo-salon",
+      name: "Skillify",
+      slug: "skillify",
       businessType: "Salon",
-      email: "demo@salon.local",
-      phone: "+913001112233",
-      city: "Delhi",
+      email: superAdminEmail,
+      phone: "+919000442442",
+      city: "Indore",
       country: "India",
       currency: "INR",
       taxRate: 18,
       trialStartsAt: new Date(),
-      trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      trialEndsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
       status: "ACTIVE",
-      featureFlags: { pos: true, appointments: true, inventory: true, reports: true, publicCatalog: true, digitalCatalog: true, customerPortal: true, ecommerce: true, onlineOrders: true, campaigns: true, messageTemplates: true, catalogAnalytics: true }
+      featureFlags: { pos: true, appointments: true, inventory: true, reports: true, publicCatalog: true, digitalCatalog: true, customerPortal: true, ecommerce: true, onlineOrders: true, campaigns: true, messageTemplates: true, catalogAnalytics: true, attendance: true }
     }
   });
 
@@ -133,7 +125,7 @@ async function main() {
 
   await prisma.userSalon.create({
     data: {
-      userId: owner.id,
+      userId: superAdmin.id,
       salonId: salon.id,
       salonRole: "SALON_OWNER",
       permissions: defaultOwnerPermissions
