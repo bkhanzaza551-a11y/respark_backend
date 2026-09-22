@@ -297,7 +297,7 @@ async function main() {
 
   console.log("Connected User to Salon Skillify as SALON_OWNER (branchId: null):", adminUserSalon.id);
 
-  // 4. Create single default CustomRole: Manager
+  // 4. Create default CustomRoles: Manager & Senior Stylist
   const managerRole = await prisma.customRole.create({
     data: {
       salonId: salon.id,
@@ -308,6 +308,29 @@ async function main() {
     }
   });
   console.log("Created Manager CustomRole:", managerRole.id);
+
+  const stylistRole = await prisma.customRole.create({
+    data: {
+      salonId: salon.id,
+      name: "Senior Stylist",
+      description: "Default staff role for salon stylists with appointments, services, and attendance access",
+      permissions: {
+        dashboard: ["view"],
+        appointments: ["view", "create", "edit"],
+        services: ["view"],
+        customers: ["view", "create", "edit"],
+        pos: ["view"],
+        attendance: ["view", "create"],
+        myDashboard: ["view"],
+        myAppointments: ["view", "edit"],
+        mySchedule: ["view"],
+        myProfile: ["view", "edit"],
+        myAttendance: ["view", "create", "edit"]
+      },
+      isSystemPreset: true
+    }
+  });
+  console.log("Created Senior Stylist CustomRole:", stylistRole.id);
 
   // 5. Create 1 Staff as Manager (NO BRANCH)
   const managerEmail = "das@ashokagroup.org.in";
