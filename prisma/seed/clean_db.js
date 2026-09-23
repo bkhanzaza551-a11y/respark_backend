@@ -6,9 +6,9 @@ const prisma = new PrismaClient();
 
 const defaultManagerPermissions = { ...defaultOwnerPermissions };
 delete defaultManagerPermissions.branches;
-delete defaultManagerPermissions.staff;
 delete defaultManagerPermissions.attendance;
 delete defaultManagerPermissions.myAttendance;
+defaultManagerPermissions.staff = ["view", "create", "edit"];
 
 async function main() {
   console.log("=== STARTING DATABASE CLEANUP & RESET (ZERO BRANCHES) ===");

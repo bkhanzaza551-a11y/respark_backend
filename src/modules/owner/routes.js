@@ -2032,18 +2032,32 @@ ownerRouter.post("/follow-ups", requireSalonPermission("customers", "edit"), val
 });
 
 ownerRouter.get("/users", requireSalonPermission("staff", "view"), async (req, res) => {
-  const branchId = normalizeBranchId(req.query.branchId);
+  const isManager = req.user.salonRole === "MANAGER";
+  const branchId = isManager ? req.user.branchId : normalizeBranchId(req.query.branchId);
   const includeArchived = req.query.includeArchived === "true";
   res.json(await prisma.userSalon.findMany({
-    where: { salonId: req.salonId, ...(includeArchived ? {} : { isArchived: false }), ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) },
+    where: {
+      salonId: req.salonId,
+      ...(includeArchived ? {} : { isArchived: false }),
+      ...(isManager && branchId
+        ? { OR: [{ branchId }, { salonRole: "SALON_OWNER" }, { id: req.user.membershipId }] }
+        : (branchId ? { OR: [{ branchId }, { branchId: null }] } : {}))
+    },
     include: { user: true, branch: true, customRole: true, shift: true, serviceAssignments: { include: { service: true } } },
     orderBy: { id: "desc" }
   }));
 });
 ownerRouter.get("/staff-users", requireSalonPermission("staff", "view"), async (req, res) => {
-  const branchId = normalizeBranchId(req.query.branchId);
+  const isManager = req.user.salonRole === "MANAGER";
+  const branchId = isManager ? req.user.branchId : normalizeBranchId(req.query.branchId);
   const rows = await prisma.userSalon.findMany({
-    where: { salonId: req.salonId, isArchived: false, ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) },
+    where: {
+      salonId: req.salonId,
+      isArchived: false,
+      ...(isManager && branchId
+        ? { OR: [{ branchId }, { salonRole: "SALON_OWNER" }, { id: req.user.membershipId }] }
+        : (branchId ? { OR: [{ branchId }, { branchId: null }] } : {}))
+    },
     include: { user: true, branch: true, customRole: true, shift: true, serviceAssignments: { include: { service: true } } },
     orderBy: { id: "desc" }
   });
@@ -2064,6 +2078,9 @@ const stripDeletePerms = (perms) => {
   return out;
 };
 ownerRouter.post("/custom-roles", requireSalonPermission("staff", "create"), validate(schemas.customRole), async (req, res) => {
+  if (req.user.salonRole === "MANAGER") {
+    return res.status(403).json({ message: "Roles and permissions management is restricted to the Salon Owner" });
+  }
   const existing = await prisma.customRole.findFirst({ where: { salonId: req.salonId, name: req.body.name } });
   if (existing) return res.status(400).json({ message: "A custom role with this name already exists" });
   res.status(201).json(await prisma.customRole.create({
@@ -2071,6 +2088,9 @@ ownerRouter.post("/custom-roles", requireSalonPermission("staff", "create"), val
   }));
 });
 ownerRouter.patch("/custom-roles/:id", requireSalonPermission("staff", "edit"), validate(schemas.customRole), async (req, res) => {
+  if (req.user.salonRole === "MANAGER") {
+    return res.status(403).json({ message: "Roles and permissions management is restricted to the Salon Owner" });
+  }
   const role = await prisma.customRole.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
   if (!role) return res.status(404).json({ message: "Custom role not found" });
   res.json(await prisma.customRole.update({
@@ -2079,16 +2099,37 @@ ownerRouter.patch("/custom-roles/:id", requireSalonPermission("staff", "edit"), 
   }));
 });
 ownerRouter.post("/users", requireSalonPermission("staff", "create"), validate(schemas.ownerUser), async (req, res) => {
+  if (req.user.salonRole === "MANAGER") {
+    if (!req.user.branchId) {
+      return res.status(403).json({ message: "Manager must have an assigned branch to add staff" });
+    }
+    req.body.branchId = req.user.branchId;
+  }
   const result = await createLoginUserForSalon(req.salonId, req.body);
   res.status(result.status).json(result.body);
 });
 ownerRouter.post("/staff-users", requireSalonPermission("staff", "create"), validate(schemas.ownerUser), async (req, res) => {
+  if (req.user.salonRole === "MANAGER") {
+    if (!req.user.branchId) {
+      return res.status(403).json({ message: "Manager must have an assigned branch to add staff" });
+    }
+    req.body.branchId = req.user.branchId;
+  }
   const result = await createLoginUserForSalon(req.salonId, req.body);
   res.status(result.status).json(result.body);
 });
 ownerRouter.patch("/users/:id", requireSalonPermission("staff", "edit"), validate(schemas.userMembershipUpdate), async (req, res) => {
   const row = await prisma.userSalon.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
   if (!row) return res.status(404).json({ message: "User mapping not found" });
+  if (req.user.salonRole === "MANAGER") {
+    if (!req.user.branchId || row.branchId !== req.user.branchId) {
+      return res.status(403).json({ message: "Managers can only edit staff in their own assigned branch" });
+    }
+    if (row.salonRole === "SALON_OWNER" || req.body.salonRole === "SALON_OWNER") {
+      return res.status(403).json({ message: "Managers cannot modify Salon Owner accounts" });
+    }
+    req.body.branchId = req.user.branchId;
+  }
   if (req.body.phone) {
     const dup = await prisma.userSalon.findFirst({ where: { salonId: req.salonId, phone: req.body.phone, NOT: { id: req.params.id }, isArchived: false } });
     if (dup) return res.status(400).json({ message: "Another staff member already uses this phone number" });
@@ -2221,6 +2262,9 @@ ownerRouter.patch("/staff-users/:id", requireSalonPermission("staff", "edit"), v
   res.json(updated);
 });
 ownerRouter.get("/roles-permissions", requireSalonPermission("staff", "view"), async (req, res) => {
+  if (req.user.salonRole === "MANAGER") {
+    return res.status(403).json({ message: "Roles and permissions management is restricted to the Salon Owner" });
+  }
   res.json(
     await prisma.userSalon.findMany({
       where: { salonId: req.salonId, isArchived: false },
@@ -2230,12 +2274,26 @@ ownerRouter.get("/roles-permissions", requireSalonPermission("staff", "view"), a
   );
 });
 ownerRouter.post("/users/create-login", requireSalonPermission("staff", "create"), validate(schemas.ownerUser), async (req, res) => {
+  if (req.user.salonRole === "MANAGER") {
+    if (!req.user.branchId) {
+      return res.status(403).json({ message: "Manager must have an assigned branch to add staff" });
+    }
+    if (req.body.salonRole === "SALON_OWNER") {
+      req.body.salonRole = "STAFF";
+    }
+    req.body.branchId = req.user.branchId;
+  }
   const result = await createLoginUserForSalon(req.salonId, req.body);
   res.status(result.status).json(result.body);
 });
 ownerRouter.patch("/users/:id/status", requireSalonPermission("staff", "edit"), async (req, res) => {
   const row = await prisma.userSalon.findFirst({ where: { id: req.params.id, salonId: req.salonId }, include: { user: true } });
   if (!row) return res.status(404).json({ message: "User mapping not found" });
+  if (req.user.salonRole === "MANAGER") {
+    if (row.salonRole === "SALON_OWNER" || (row.branchId && row.branchId !== req.user.branchId)) {
+      return res.status(403).json({ message: "Managers can only update staff status within their assigned branch" });
+    }
+  }
   res.json(await prisma.user.update({ where: { id: row.userId }, data: { isActive: Boolean(req.body.isActive) } }));
 });
 ownerRouter.patch("/users/:id/archive", requireSalonPermission("staff", "delete"), async (req, res) => {
