@@ -268,7 +268,7 @@ ownerRouter.get("/dashboard", requireSalonPermission("dashboard", "view"), async
   endOfDay.setDate(endOfDay.getDate() + 1);
   const activeAppointmentStatuses = ["PENDING", "CONFIRMED", "CHECKED_IN", "IN_PROGRESS"];
 
-  const [customers, services, invoices, users, branches, recentInvoices, recentCustomers, allInvoices, recentPayments, todayAppointments, upcomingAppointments, inventoryProducts] = await Promise.all([
+  const [customers, services, invoices, users, branches, recentInvoices, recentCustomers, allInvoices, recentPayments, todayAppointments, upcomingAppointments, inventoryProducts, todayInvoices, todayExpenses, todayAppointmentsList, todayPayments] = await Promise.all([
     prisma.customer.count({ where: { salonId: req.salonId, ...(branchId ? { branchId } : {}) } }),
     prisma.service.count({ where: serviceWhere }),
     prisma.invoice.count({ where: invoiceWhere }),
@@ -299,6 +299,34 @@ ownerRouter.get("/dashboard", requireSalonPermission("dashboard", "view"), async
         ...(branchId ? { OR: [{ branchId }, { branchId: null }, { stockMovements: { some: { branchId } } }] } : {})
       },
       include: { category: true, branch: true }
+    }),
+    prisma.invoice.findMany({
+      where: {
+        ...invoiceWhere,
+        status: { in: ["PAID", "PARTIAL"] },
+        createdAt: { gte: startOfDay, lt: endOfDay }
+      },
+      include: { items: true, payments: true }
+    }),
+    prisma.expense.findMany({
+      where: {
+        salonId: req.salonId,
+        ...(branchId ? { branchId } : {}),
+        expenseDate: { gte: startOfDay, lt: endOfDay }
+      }
+    }),
+    prisma.appointment.findMany({
+      where: {
+        ...appointmentWhere,
+        startAt: { gte: startOfDay, lt: endOfDay }
+      }
+    }),
+    prisma.payment.findMany({
+      where: {
+        salonId: req.salonId,
+        createdAt: { gte: startOfDay, lt: endOfDay },
+        ...(branchId ? { invoice: { branchId } } : {})
+      }
     })
   ]);
 
@@ -311,6 +339,44 @@ ownerRouter.get("/dashboard", requireSalonPermission("dashboard", "view"), async
   const lowStockProducts = branchScopedProducts
     .filter((product) => toAmount(product.currentStock) <= toAmount(product.minStock))
     .map((product) => ({ id: product.id, name: product.name, currentStock: toAmount(product.currentStock), minStock: toAmount(product.minStock), unit: product.unit || "pcs" }));
+
+  // Today Totals Breakdown
+  const todayServicesRevenue = todayInvoices
+    .flatMap(inv => inv.items || [])
+    .filter(item => item.itemType === "SERVICE" || (item.serviceId && !item.productId))
+    .reduce((sum, item) => sum + toAmount(item.lineTotal), 0);
+  const todayProductsRevenue = todayInvoices
+    .flatMap(inv => inv.items || [])
+    .filter(item => item.itemType === "PRODUCT" || item.productId)
+    .reduce((sum, item) => sum + toAmount(item.lineTotal), 0);
+  const todayExpensesTotal = todayExpenses.reduce((sum, exp) => sum + toAmount(exp.amount), 0);
+
+  // Appointments For Today Breakdown
+  const apptsAll = todayAppointmentsList.length;
+  const apptsUpcoming = todayAppointmentsList.filter(a => a.status === "CONFIRMED" || a.status === "PENDING").length;
+  const apptsOngoing = todayAppointmentsList.filter(a => a.status === "IN_PROGRESS" || a.status === "CHECKED_IN").length;
+  const apptsCompleted = todayAppointmentsList.filter(a => a.status === "COMPLETED").length;
+  const apptsNoShow = todayAppointmentsList.filter(a => a.status === "NO_SHOW").length;
+
+  // Finance For Today
+  let financeCard = 0;
+  let financeCash = 0;
+  let financeUpi = 0;
+  let financeOthers = 0;
+
+  for (const pay of todayPayments) {
+    const amt = toAmount(pay.amount);
+    const mode = String(pay.mode || "").toUpperCase();
+    if (mode === "CARD") {
+      financeCard += amt;
+    } else if (mode === "CASH") {
+      financeCash += amt;
+    } else if (mode === "UPI" || mode === "ONLINE") {
+      financeUpi += amt;
+    } else {
+      financeOthers += amt;
+    }
+  }
 
   res.json({
     customers,
@@ -328,7 +394,28 @@ ownerRouter.get("/dashboard", requireSalonPermission("dashboard", "view"), async
     lowStockProducts,
     recentInvoices,
     recentCustomers,
-    recentPayments
+    recentPayments,
+
+    // KPI Cards For Today
+    todayOverview: {
+      totalSales: todaySales,
+      services: todayServicesRevenue,
+      products: todayProductsRevenue,
+      expenses: todayExpensesTotal
+    },
+    todayAppointmentsBreakdown: {
+      all: apptsAll,
+      upcoming: apptsUpcoming,
+      ongoing: apptsOngoing,
+      completed: apptsCompleted,
+      noShow: apptsNoShow
+    },
+    todayFinance: {
+      card: financeCard,
+      cash: financeCash,
+      upi: financeUpi,
+      others: financeOthers
+    }
   });
 });
 

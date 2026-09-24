@@ -52,13 +52,13 @@ export const createApp = ({
   jsonLimit = process.env.JSON_BODY_LIMIT || "1mb",
   rateLimitWindowMs = parseNumber(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
   rateLimitMax = parseNumber(process.env.RATE_LIMIT_MAX, 3000),
-  trustProxy = process.env.TRUST_PROXY ? process.env.TRUST_PROXY === "true" : true
+  trustProxy = process.env.TRUST_PROXY ? process.env.TRUST_PROXY !== "false" : true
 } = {}) => {
   const app = express();
   const resolvedOrigins = new Set(getAllowedOrigins(allowedOrigins));
 
   app.disable("x-powered-by");
-  if (trustProxy) app.set("trust proxy", true);
+  if (trustProxy) app.set("trust proxy", 1);
 
   morgan.token("req-id", (req) => req.requestId);
   app.use((req, res, next) => {

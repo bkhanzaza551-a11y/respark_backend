@@ -65,11 +65,12 @@ export const getMailer = () => {
 
 export const mailerMode = () => (smtpConfigured() ? "smtp" : "json");
 export const mailerStatus = () => ({
-  mode: mailerMode(),
+  mode: zeptoConfigured() ? "zeptomail" : mailerMode(),
+  zeptoConfigured: zeptoConfigured(),
   smtpConfigured: smtpConfigured(),
   host: process.env.SMTP_HOST || null,
   port: process.env.SMTP_PORT || null,
-  from: process.env.SMTP_FROM || null,
+  from: parseFrom().address,
   user: process.env.SMTP_USER || null,
   timeout: CONNECTION_TIMEOUT_MS
 });
@@ -85,6 +86,64 @@ const stripHtml = (html) => {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ─── ZeptoMail HTTP transport (Railway blocks outbound SMTP) ────────────────
+const ZEPTO_URL = "https://api.zeptomail.in/v1.1/email";
+const zeptoConfigured = () => Boolean(process.env.ZEPTOMAIL_API_KEY);
+
+const parseFrom = () => {
+  const raw = process.env.SMTP_FROM || process.env.MAIL_FROM || "Salon Nest <noreply@salonnest.in>";
+  const match = String(raw).match(/^\s*(?:"?([^"<]*)"?\s*)?<([^>]+)>\s*$/);
+  if (match) return { address: match[2].trim(), name: (match[1] || "Salon Nest").trim() };
+  if (raw.includes("@")) return { address: raw.trim(), name: "Salon Nest" };
+  return { address: "noreply@salonnest.in", name: raw.trim() || "Salon Nest" };
+};
+
+const splitRecipients = (value) =>
+  (Array.isArray(value) ? value : String(value || "").split(","))
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
+
+const sendViaZeptoMail = async (options) => {
+  const from = parseFrom();
+  const toList = splitRecipients(options.to);
+  if (!toList.length) throw new Error("No recipient address");
+
+  const payload = {
+    from: { address: from.address, name: from.name },
+    to: toList.map((address) => ({ email_address: { address, name: "" } })),
+    subject: options.subject || "(no subject)"
+  };
+  if (options.html) payload.htmlbody = options.html;
+  payload.textbody = options.text || stripHtml(options.html || "");
+  if (options.cc) payload.cc = splitRecipients(options.cc).map((address) => ({ email_address: { address, name: "" } }));
+  if (options.bcc) payload.bcc = splitRecipients(options.bcc).map((address) => ({ email_address: { address, name: "" } }));
+  if (options.replyTo) payload.reply_to = [{ address: options.replyTo, name: "" }];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(ZEPTO_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Zoho-enczapikey ${process.env.ZEPTOMAIL_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const text = await response.text().catch(() => "");
+    if (!response.ok) {
+      throw new Error(`ZeptoMail ${response.status}: ${text.slice(0, 300)}`);
+    }
+    let parsed = {};
+    try { parsed = JSON.parse(text); } catch { parsed = {}; }
+    return { messageId: parsed.message_id || parsed.request_id || null, mode: "zeptomail", preview: null };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 
 const pendingEmails = [];
 
@@ -107,14 +166,24 @@ export const retryPendingEmails = async () => {
 };
 
 export const sendMail = async (options) => {
-  if (!smtpConfigured()) {
-    console.log(`[mailer] SMTP not configured, email logged for ${options.to}: ${options.subject || "(no subject)"}`);
-    return { mode: "json", messageId: null, preview: "SMTP not configured" };
+  const hasTransport = zeptoConfigured() || smtpConfigured();
+  if (!hasTransport) {
+    console.log(`[mailer] No transport configured, email logged for ${options.to}: ${options.subject || "(no subject)"}`);
+    return { mode: "json", messageId: null, preview: "No mail transport configured" };
   }
+
+  const useZepto = zeptoConfigured();
+  if (useZepto) options = { ...options, text: options.text || stripHtml(options.html || "") };
 
   let lastError;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
+      if (useZepto) {
+        const result = await sendViaZeptoMail(options);
+        if (attempt > 0) console.log(`[mailer] Email sent on attempt ${attempt + 1} to ${options.to}`);
+        return { mode: result.mode, messageId: result.messageId, preview: null };
+      }
+
       const mail = await getMailer().sendMail({
         from: process.env.SMTP_FROM || '"SalonNest" <govardhan@salonnest.in>',
         ...options,
@@ -140,5 +209,5 @@ export const sendMail = async (options) => {
 
   console.error(`[mailer] All ${MAX_RETRIES + 1} attempts failed for ${options.to}. Queuing for retry.`);
   pendingEmails.push({ ...options, _queuedAt: Date.now() });
-  return { mode: mailerMode(), messageId: null, queued: true };
+  return { mode: useZepto ? "zeptomail" : mailerMode(), messageId: null, queued: true };
 };
