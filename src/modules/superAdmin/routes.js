@@ -139,6 +139,27 @@ superAdminRouter.post("/salons", validate(schemas.salon), asyncHandler(async (re
           permissions: defaultOwnerPermissions
         }
       });
+      
+      // Auto-create first branch with owner name
+      await tx.branch.create({
+        data: {
+          salonId: createdSalon.id,
+          name: ownerName,
+          address: "Main Branch",
+          phone: ownerEmail,
+          isActive: true
+        }
+      });
+    } else {
+      // If no owner is provided, use the salon name for the branch
+      await tx.branch.create({
+        data: {
+          salonId: createdSalon.id,
+          name: createdSalon.name,
+          address: "Main Branch",
+          isActive: true
+        }
+      });
     }
 
     return createdSalon;

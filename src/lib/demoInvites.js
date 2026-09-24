@@ -160,6 +160,16 @@ export const approveDemoLead = async ({ leadId, actorName, trialDays = 7, planId
       }
     });
 
+    await tx.branch.create({
+      data: {
+        salonId: salon.id,
+        name: lead.name,
+        address: "Main Branch",
+        phone: lead.phone,
+        isActive: true
+      }
+    });
+
     const subscription = await tx.subscription.create({
       data: {
         salonId: salon.id,
