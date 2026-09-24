@@ -50,6 +50,12 @@ enum InvoiceStatus {
 }
 
 enum DemoLeadStatus {
+  NEW
+  CONNECTED
+  DEMO_SCHEDULED
+  TRIAL_STARTED
+  CONVERTED
+  CANCELED
   PENDING
   APPROVED
   REJECTED
@@ -487,6 +493,7 @@ model Branch {
   id                   String                @id @default(cuid())
   salonId              String
   name                 String
+  city                 String?
   phone                String?
   email                String?
   address              String?
