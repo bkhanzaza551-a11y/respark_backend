@@ -6,6 +6,51 @@ import { registerPublicPhase3Routes } from "./phase3.js";
 
 export const publicRouter = Router();
 
+// Demo Lead Generation (Public)
+publicRouter.post("/demo-leads", validate(schemas.demoLead), asyncHandler(async (req, res) => {
+  const data = req.body;
+  const lead = await prisma.demoLead.create({
+    data: {
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      company: data.company,
+      message: data.message,
+      status: "NEW"
+    }
+  });
+  res.status(201).json(lead);
+}));
+
+// Demo Checkout Info (Public)
+publicRouter.get("/demo-checkout-info/:leadId/:planId", asyncHandler(async (req, res) => {
+  const { leadId, planId } = req.params;
+  const lead = await prisma.demoLead.findUnique({ where: { id: leadId } });
+  if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+  const plan = await prisma.subscriptionPlan.findUnique({ where: { id: planId } });
+  if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+  res.json({
+    leadName: lead.name,
+    leadEmail: lead.email,
+    leadPhone: lead.phone,
+    company: lead.company || lead.salonName || "",
+    planName: plan.name,
+    price: plan.price,
+    originalPrice: plan.price,
+    discountAmount: 0,
+    limits: plan.limits || { branches: 1, users: 5, customers: 500, invoices: 1000 }
+  });
+}));
+
+// Mock Razorpay Order (Bypass/Setup)
+publicRouter.post("/demo-checkout/:leadId/razorpay-order", asyncHandler(async (req, res) => {
+  // We don't have razorpay configured on the backend, so we gracefully tell the frontend to show the manual payment/contact support message.
+  res.status(503).json({ message: "Payment gateway is not configured." });
+}));
+
+
 publicRouter.get("/settings", asyncHandler(async (req, res) => {
   const settings = await prisma.globalSetting.findFirst();
   res.json(
