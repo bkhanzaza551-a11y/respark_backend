@@ -9,6 +9,7 @@ import { convertDemoToPaid, sendTrialReminder } from "../../lib/subscriptionLife
 import { runExpiredDemoCleanup } from "../../lib/trialCleanup.js";
 import { asyncHandler } from "../../lib/async-handler.js";
 import { createAuditLog } from "../../lib/phase4.js";
+import { sendMail } from "../../lib/mailer.js";
 
 export const superAdminRouter = Router();
 superAdminRouter.use(requireAuth, requireSystemRole("SUPER_ADMIN"));
@@ -469,6 +470,49 @@ superAdminRouter.get("/demo-leads", asyncHandler(async (req, res) => {
       orderBy: { createdAt: "desc" }
     })
   );
+}));
+
+superAdminRouter.put("/demo-leads/:id", asyncHandler(async (req, res) => {
+  const { assignedUserId, email } = req.body;
+  const lead = await prisma.demoLead.findUnique({ where: { id: req.params.id } });
+  
+  if (!lead) return res.status(404).json({ message: "Demo lead not found" });
+
+  const data = {};
+  if (assignedUserId !== undefined) data.assignedUserId = assignedUserId || null;
+  if (email !== undefined) data.email = email;
+
+  const updated = await prisma.demoLead.update({
+    where: { id: req.params.id },
+    data
+  });
+
+  // If newly assigned to a specific user
+  if (assignedUserId && assignedUserId !== lead.assignedUserId) {
+    const assignedUser = await prisma.user.findUnique({ where: { id: assignedUserId } });
+    if (assignedUser && assignedUser.email) {
+      await sendMail({
+        to: assignedUser.email,
+        subject: "New Demo Lead Assigned to You",
+        html: `
+          <div style="font-family: sans-serif; color: #333;">
+            <h2>New Demo Lead Assigned</h2>
+            <p>Hello ${assignedUser.name},</p>
+            <p>A new demo lead has been assigned to you by the Super Admin.</p>
+            <ul>
+              <li><strong>Lead Name:</strong> ${lead.name}</li>
+              <li><strong>Company/Salon:</strong> ${lead.salonName || "N/A"}</li>
+              <li><strong>Email:</strong> ${lead.email || "Not Provided"}</li>
+              <li><strong>Phone:</strong> ${lead.phone || "Not Provided"}</li>
+            </ul>
+            <p>Please log in to the admin dashboard to follow up.</p>
+          </div>
+        `
+      }).catch(err => console.error("Failed to send assignment notification:", err));
+    }
+  }
+
+  res.json(updated);
 }));
 superAdminRouter.post("/demo-leads/:id/approve", validate(schemas.demoLeadReview), asyncHandler(async (req, res) => {
   const result = await approveDemoLead({
