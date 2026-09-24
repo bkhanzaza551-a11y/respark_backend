@@ -177,6 +177,27 @@ export const registerAppointmentRoutes = (ownerRouter) => {
     }));
   });
 
+  ownerRouter.get("/appointments/pending-online", requireFeatureEnabled("appointments"), requireSalonPermission("appointments", "view"), async (req, res) => {
+    const branchId = normalizeBranchId(req.query.branchId);
+    const rows = await prisma.appointment.findMany({
+      where: {
+        ...buildAppointmentScope(req, branchId),
+        bookingChannel: "ONLINE",
+        status: { notIn: ["CANCELLED", "COMPLETED"] },
+        primaryStaffUserId: null
+      },
+      include: {
+        customer: true,
+        branch: true,
+        primaryStaff: { include: { user: true } },
+        items: { include: { service: true, assignedStaff: { include: { userSalon: { include: { user: true } } } } } }
+      },
+      orderBy: { startAt: "asc" },
+      take: 200
+    });
+    res.json(rows);
+  });
+
   ownerRouter.get("/appointments/:id", requireFeatureEnabled("appointments"), requireSalonPermission("appointments", "view"), async (req, res) => {
     const appointment = await fetchAppointment(req.salonId, req.params.id);
     if (!appointment) return res.status(404).json({ message: "Appointment not found" });

@@ -708,7 +708,7 @@ export const processScheduledFollowUps = async () => {
       if (!customer?.email) continue;
 
       const salonId = customer.salonId;
-      const emailEnabled = await areNotificationEmailsEnabled(salonId).catch(() => false);
+      const { emailEnabled = false } = await getNotificationToggles(salonId).catch(() => ({ emailEnabled: false }));
       if (!emailEnabled) continue;
 
       const messageContent = details.message || "Follow-up scheduled by our team.";

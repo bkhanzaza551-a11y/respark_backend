@@ -2687,6 +2687,113 @@ ownerRouter.get("/subscription", async (req, res) => {
   }
 });
 
+// ─── Phone verification (OTP) ───────────────────────────────────────────────
+const phoneOtpStore = new Map();
+const PHONE_OTP_TTL_MS = 5 * 60 * 1000;
+const normalizePhone = (value) => {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.length !== 10) return null;
+  return /^[6-9]\d{9}$/.test(digits) ? `+91${digits}` : null;
+};
+const maskPhone = (phone) => (phone ? `${phone.slice(0, 5)}****${phone.slice(-3)}` : null);
+const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
+
+ownerRouter.get("/verify-phone/info", async (req, res) => {
+  try {
+    const membership = req.user?.membershipId
+      ? await prisma.userSalon.findUnique({ where: { id: req.user.membershipId }, select: { phone: true } })
+      : null;
+    const phone = membership?.phone || null;
+    res.json({
+      phone,
+      maskedPhone: maskPhone(phone),
+      isPhoneVerified: Boolean(phone),
+      canSkip: true
+    });
+  } catch {
+    res.json({ phone: null, maskedPhone: null, isPhoneVerified: false, canSkip: true });
+  }
+});
+
+ownerRouter.post("/verify-phone/send", async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ message: "Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9." });
+
+  const otpCode = generateOtp();
+  const key = `${req.user.userId}:${phone}`;
+  phoneOtpStore.set(key, { otpCode, expiresAt: Date.now() + PHONE_OTP_TTL_MS, attempts: 0 });
+
+  let channel = "sms";
+  let delivered = false;
+  try {
+    const { sendWhatsApp } = await import("../../lib/whatsappService.js");
+    await sendWhatsApp({ salonId: req.user.salonId, to: phone, message: `Your Salon Nest verification code is ${otpCode}. It expires in 5 minutes.` });
+    delivered = true;
+    channel = "whatsapp";
+  } catch {
+    try {
+      const { sendSms } = await import("../../lib/smsService.js");
+      await sendSms({ salonId: req.user.salonId, to: phone, message: `Your Salon Nest verification code is ${otpCode}. It expires in 5 minutes.` });
+      delivered = true;
+      channel = "sms";
+    } catch {
+      delivered = false;
+    }
+  }
+
+  return res.json({
+    message: delivered
+      ? `OTP sent via ${channel === "whatsapp" ? "WhatsApp" : "SMS"}.`
+      : "Verification code generated. Use the code shown to continue.",
+    channel: delivered ? channel : null,
+    ...(process.env.NODE_ENV !== "production" ? { otpCode } : {})
+  });
+});
+
+ownerRouter.post("/verify-phone/verify", async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  const otpCode = String(req.body?.otpCode || "").trim();
+  if (!phone || otpCode.length !== 6) return res.status(400).json({ message: "Please enter the complete 6-digit OTP code." });
+
+  const key = `${req.user.userId}:${phone}`;
+  const record = phoneOtpStore.get(key);
+  if (!record || record.expiresAt < Date.now()) {
+    phoneOtpStore.delete(key);
+    return res.status(400).json({ message: "This code has expired. Please request a new one." });
+  }
+  record.attempts += 1;
+  if (record.attempts > 5) {
+    phoneOtpStore.delete(key);
+    return res.status(429).json({ message: "Too many attempts. Please request a new code." });
+  }
+  if (record.otpCode !== otpCode) return res.status(400).json({ message: "Invalid OTP. Please check the code and retry." });
+
+  phoneOtpStore.delete(key);
+  try {
+    if (req.user.membershipId) {
+      await prisma.userSalon.update({ where: { id: req.user.membershipId }, data: { phone } });
+    }
+  } catch {
+    // non-fatal: verification already succeeded
+  }
+
+  return res.json({ message: "Phone number verified successfully.", phone });
+});
+
+ownerRouter.post("/verify-phone/skip", async (req, res) => {
+  const settings = await prisma.salonSetting.findFirst({
+    where: { salonId: req.user.salonId, branchId: null },
+    select: { advancedSettings: true }
+  });
+  const mandatory = settings?.advancedSettings?.accessControl?.requirePhoneVerification === true;
+  if (mandatory) {
+    return res.status(403).json({ message: "Mobile verification is mandatory on this platform." });
+  }
+  return res.json({ message: "Phone verification skipped.", skipped: true });
+});
+
 ownerRouter.get("/products", async (req, res) => {
   const where = { salonId: req.user.salonId, isActive: true };
   if (req.query.branchId) where.branchId = req.query.branchId;

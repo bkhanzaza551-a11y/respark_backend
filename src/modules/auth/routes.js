@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
-import { signAccessToken, signRefreshToken, verifyLoginAccessToken, verifyRefreshToken } from "../../lib/tokens.js";
+import { signAccessToken, signRefreshToken, verifyLoginAccessToken, verifyRefreshToken, verifyAccessToken } from "../../lib/tokens.js";
 import { validate, schemas } from "../../middlewares/validate.js";
 import { hashPasswordSetupToken, generateRawPasswordSetupToken } from "../../lib/passwordSetup.js";
 import { sendMail } from "../../lib/mailer.js";
@@ -186,6 +186,88 @@ authRouter.post("/refresh", async (req, res) => {
 });
 
 authRouter.post("/logout", async (req, res) => res.json({ ok: true }));
+
+authRouter.get("/me", async (req, res) => {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ message: "Authentication required" });
+
+  let decoded;
+  try {
+    decoded = verifyAccessToken(token);
+  } catch {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+    include: { memberships: { include: { salon: { select: { id: true, name: true, slug: true, status: true, featureFlags: true } } } } }
+  });
+  if (!user || !user.isActive) return res.status(401).json({ message: "Invalid user" });
+
+  const activeMemberships = sortMemberships(
+    (user.memberships || []).filter((membership) => membership?.salon?.status !== "SUSPENDED")
+  );
+  const membership = decoded.salonId
+    ? activeMemberships.find((item) => item.salonId === decoded.salonId)
+    : (activeMemberships[0] || null);
+
+  const subscription = membership?.salonId
+    ? await prisma.subscription.findFirst({
+        where: { salonId: membership.salonId, status: { in: ["ACTIVE", "TRIAL"] } },
+        include: { plan: true },
+        orderBy: { endsAt: "desc" }
+      })
+    : null;
+
+  const mergedFeatureFlags = {
+    ...(subscription?.plan?.featureFlags || {}),
+    ...(membership?.salon?.featureFlags || {})
+  };
+  const mergedPermissions = membership
+    ? membership.salonRole === "SALON_OWNER"
+      ? { ...defaultOwnerPermissions, ...(membership.permissions || {}) }
+      : (await (async () => {
+          if (membership.customRoleId) {
+            const customRole = await prisma.customRole.findFirst({ where: { id: membership.customRoleId, salonId: membership.salonId } });
+            if (customRole) return { ...(membership.permissions || {}), ...(customRole.permissions || {}) };
+          }
+          return membership.permissions || {};
+        })())
+    : null;
+
+  const serializeMembership = (item) => ({
+    salonId: item.salonId,
+    salonName: item.salon?.name || null,
+    salonSlug: item.salon?.slug || null,
+    salonRole: item.salonRole,
+    branchId: item.branchId || null,
+    customRoleId: item.customRoleId || null,
+    permissions: item.salonRole === "SALON_OWNER" ? { ...defaultOwnerPermissions, ...(item.permissions || {}) } : (item.permissions || {}),
+    featureFlags: item.salonId === membership?.salonId ? mergedFeatureFlags : (item.salon?.featureFlags || {}),
+    salon: item.salon || null,
+    plan: item.salonId === membership?.salonId
+      ? (subscription?.plan
+          ? {
+              id: subscription.plan.id,
+              name: subscription.plan.name,
+              branchLimit: subscription.plan.branchLimit,
+              userLimit: subscription.plan.userLimit,
+              customerLimit: subscription.plan.customerLimit,
+              invoiceLimit: subscription.plan.invoiceLimit,
+              storageLimit: subscription.plan.storageLimit,
+              isCustom: subscription.plan.isCustom
+            }
+          : null)
+      : null
+  });
+
+  return res.json({
+    user: { id: user.id, name: user.name, email: user.email, systemRole: user.systemRole },
+    membership: membership ? { ...serializeMembership(membership), permissions: mergedPermissions, featureFlags: mergedFeatureFlags } : null,
+    activeMemberships: activeMemberships.map(serializeMembership)
+  });
+});
 
 authRouter.post("/forgot-password", validate(schemas.forgotPassword), async (req, res) => {
   const { email } = req.body;

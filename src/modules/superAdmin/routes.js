@@ -10,6 +10,7 @@ import { runExpiredDemoCleanup } from "../../lib/trialCleanup.js";
 import { asyncHandler } from "../../lib/async-handler.js";
 import { createAuditLog } from "../../lib/phase4.js";
 import { sendMail } from "../../lib/mailer.js";
+import { signLoginAccessToken } from "../../lib/tokens.js";
 
 export const superAdminRouter = Router();
 superAdminRouter.use(requireAuth, requireSystemRole("SUPER_ADMIN"));
@@ -194,6 +195,61 @@ superAdminRouter.get("/salons", asyncHandler(async (req, res) => {
       orderBy: { createdAt: "desc" }
     })
   );
+}));
+const buildSalon360 = async (salonId) => {
+  const salon = await prisma.salon.findUnique({
+    where: { id: salonId },
+    include: {
+      subscriptions: { include: { plan: true, history: { orderBy: { createdAt: "desc" } } } },
+      users: { include: { user: true, branch: true } },
+      branches: true,
+      services: true,
+      customers: true
+    }
+  });
+  if (!salon) return null;
+
+  const ownerMembership = (salon.users || []).find((u) => u.salonRole === "SALON_OWNER") || (salon.users || [])[0] || null;
+  const owner = ownerMembership?.user || null;
+
+  const [tickets, payments, productRequests, staffRequests, auditLogs] = await Promise.all([
+    prisma.supportTicket.findMany({ where: { salonId }, include: { messages: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => []),
+    prisma.subscriptionHistory.findMany({ where: { subscription: { salonId } }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => []),
+    prisma.productRequirement.findMany({ where: { salonId }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => []),
+    prisma.staffRequirement.findMany({ where: { salonId }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => []),
+    prisma.auditLog.findMany({ where: { salonId }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => [])
+  ]);
+
+  const invoiceAgg = await prisma.invoice.aggregate({ where: { salonId }, _count: { _all: true }, _sum: { total: true } }).catch(() => ({ _count: { _all: 0 }, _sum: { total: null } }));
+
+  return {
+    salon,
+    owner,
+    tickets,
+    payments,
+    productRequests,
+    staffRequests,
+    auditLogs,
+    analytics: {
+      customers: salon.customers?.length || 0,
+      services: salon.services?.length || 0,
+      products: await prisma.product.count({ where: { salonId } }).catch(() => 0),
+      invoices: invoiceAgg?._count?._all || 0,
+      revenue: Number(invoiceAgg?._sum?.total || 0),
+      branches: salon.branches?.length || 0
+    }
+  };
+};
+
+superAdminRouter.get("/salons/:id/full", asyncHandler(async (req, res) => {
+  const payload = await buildSalon360(req.params.id);
+  if (!payload) return res.status(404).json({ message: "Salon not found" });
+  res.json(payload);
+}));
+superAdminRouter.get("/salons/:id/360", asyncHandler(async (req, res) => {
+  const payload = await buildSalon360(req.params.id);
+  if (!payload) return res.status(404).json({ message: "Salon not found" });
+  res.json(payload);
 }));
 superAdminRouter.get("/salons/:id", asyncHandler(async (req, res) =>
   res.json(
@@ -421,6 +477,55 @@ superAdminRouter.post("/subscriptions/:id/send-trial-reminder", asyncHandler(asy
   if (result.error) return res.status(result.error.status).json({ message: result.error.message });
   return res.json(result);
 }));
+superAdminRouter.post("/subscriptions/:id/remind", asyncHandler(async (req, res) => {
+  const subscription = await prisma.subscription.findUnique({
+    where: { id: req.params.id },
+    include: { salon: true, plan: true }
+  });
+  if (!subscription) return res.status(404).json({ message: "Subscription not found" });
+
+  const owner = await prisma.userSalon.findFirst({
+    where: { salonId: subscription.salonId, salonRole: "SALON_OWNER", isArchived: false },
+    include: { user: true }
+  });
+  if (!owner?.user) return res.status(404).json({ message: "No salon owner found for this subscription." });
+
+  const loginAccessToken = signLoginAccessToken({ userId: owner.user.id, email: owner.user.email, salonId: subscription.salonId });
+  const loginLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/login?email=${encodeURIComponent(owner.user.email)}&access=${encodeURIComponent(loginAccessToken)}`;
+  const diffMs = new Date(subscription.endsAt) - new Date();
+  const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  const renewalLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/login?email=${encodeURIComponent(owner.user.email)}&access=${encodeURIComponent(loginAccessToken)}`;
+
+  let delivery = null;
+  let emailError = null;
+  try {
+    delivery = await sendMail({
+      to: owner.user.email,
+      subject: `Renewal reminder for ${subscription.salon.name} — ${subscription.plan?.name || "your plan"}`,
+      text: `Hi ${owner.user.name},\n\nYour ${subscription.plan?.name || "subscription"} for ${subscription.salon.name} ${daysLeft > 0 ? `expires in ${daysLeft} day(s)` : "has expired"} (on ${new Date(subscription.endsAt).toDateString()}).\n\nRenew here: ${renewalLink}\n\nThanks,\nSalon Nest`,
+      html: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f7f4ef;color:#18212c;"><div style="max-width:620px;margin:0 auto;background:#fff;border-radius:24px;padding:28px;"><h2>Renewal reminder</h2><p>Hi ${owner.user.name},</p><p>Your <strong>${subscription.plan?.name || "subscription"}</strong> for <strong>${subscription.salon.name}</strong> ${daysLeft > 0 ? `expires in <strong>${daysLeft} day(s)</strong>` : "has expired"} (on ${new Date(subscription.endsAt).toDateString()}).</p><p><a href="${renewalLink}" style="display:inline-block;background:#0f766e;color:#fff;padding:14px 18px;border-radius:999px;text-decoration:none;font-weight:700;">Renew now</a></p></div></div>`
+    });
+  } catch (error) {
+    emailError = error?.message || "Renewal reminder email failed";
+    delivery = { mode: "failed", messageId: null, preview: null };
+  }
+
+  await prisma.subscription.update({ where: { id: subscription.id }, data: { reminderSentAt: new Date() } }).catch(() => {});
+  await prisma.subscriptionHistory.create({
+    data: {
+      subscriptionId: subscription.id,
+      action: "EXPIRY_REMINDER_SENT",
+      createdBy: req.user?.name || "SUPER_ADMIN",
+      fromStatus: subscription.status,
+      toStatus: subscription.status,
+      fromPaymentStatus: subscription.paymentStatus || "PENDING",
+      toPaymentStatus: subscription.paymentStatus || "PENDING",
+      notes: `Renewal reminder sent (${daysLeft} day(s) remaining)`
+    }
+  }).catch(() => {});
+
+  return res.json({ subscription, ownerEmail: owner.user.email, renewalLink, delivery, emailError });
+}));
 superAdminRouter.post("/subscriptions/:id/convert-demo", validate(schemas.convertSubscription), asyncHandler(async (req, res) => {
   const result = await convertDemoToPaid({
     subscriptionId: req.params.id,
@@ -548,6 +653,55 @@ superAdminRouter.post("/demo-leads/:id/resend-invite", asyncHandler(async (req, 
   const result = await resendDemoInvite({ leadId: req.params.id });
   if (result.error) return res.status(result.error.status).json({ message: result.error.message });
   return res.json(result);
+}));
+superAdminRouter.post("/demo-leads/:id/send-purchase-link", asyncHandler(async (req, res) => {
+  const lead = await prisma.demoLead.findUnique({ where: { id: req.params.id } });
+  if (!lead) return res.status(404).json({ message: "Demo lead not found" });
+
+  const { planId, discountType, discountValue, finalPrice } = req.body || {};
+  if (!planId) return res.status(400).json({ message: "A subscription plan is required." });
+  const plan = await prisma.plan.findUnique({ where: { id: planId } });
+  if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+  const basePrice = Number(plan.monthlyPrice) || 0;
+  let price = Number(finalPrice);
+  if (!Number.isFinite(price) || price <= 0) {
+    const value = Number(discountValue) || 0;
+    price = discountType === "PERCENTAGE"
+      ? Math.max(0, basePrice - (basePrice * value) / 100)
+      : Math.max(0, basePrice - value);
+  }
+  price = Math.round(price);
+
+  const checkoutLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/demo-checkout/${encodeURIComponent(lead.id)}/${encodeURIComponent(plan.id)}`;
+  const money = `₹${price.toLocaleString("en-IN")}`;
+
+  let delivery = null;
+  let emailError = null;
+  try {
+    delivery = await sendMail({
+      to: lead.email,
+      subject: `Complete your purchase — ${plan.name} plan (${money})`,
+      text: `Hi ${lead.name || "there"},\n\nYour selected plan is ${plan.name} at ${money}.\n\nComplete your secure checkout here:\n${checkoutLink}\n\nThanks,\nSalon Nest`,
+      html: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f7f4ef;color:#18212c;"><div style="max-width:620px;margin:0 auto;background:#fff;border-radius:24px;padding:28px;"><h2>Complete your purchase</h2><p>Hi ${lead.name || "there"},</p><p>Your selected plan is <strong>${plan.name}</strong> at <strong>${money}</strong>.</p><p><a href="${checkoutLink}" style="display:inline-block;background:#0f766e;color:#fff;padding:14px 18px;border-radius:999px;text-decoration:none;font-weight:700;">Proceed to secure checkout</a></p><p style="font-size:14px;color:#64748b;">If the button does not work, copy this link:<br>${checkoutLink}</p></div></div>`
+    });
+  } catch (error) {
+    emailError = error?.message || "Purchase link email failed";
+    delivery = { mode: "failed", messageId: null, preview: null };
+  }
+
+  await createAuditLog({
+    salonId: lead.salonId || null,
+    actorUserId: req.user?.userId || null,
+    module: "DEMO_LEADS",
+    action: "DEMO_LEAD_PURCHASE_LINK_SENT",
+    entityType: "DemoLead",
+    entityId: lead.id,
+    summary: `Purchase link sent to ${lead.email} for ${plan.name} (${money})`,
+    metadata: { actorName: req.user?.name || "SUPER_ADMIN", leadEmail: lead.email, planId: plan.id, planName: plan.name, finalPrice: price, checkoutLink }
+  }).catch(() => {});
+
+  return res.json({ lead, plan: plan.name, finalPrice: price, checkoutLink, delivery, emailError });
 }));
 superAdminRouter.get("/support-tickets", asyncHandler(async (req, res) => {
   const status = req.query.status ? String(req.query.status) : "";
@@ -1035,8 +1189,18 @@ superAdminRouter.get("/available-pages", asyncHandler(async (req, res) => {
 }));
 
 superAdminRouter.get("/staff", asyncHandler(async (req, res) => {
+  const onlyActive = req.query.onlyActive === "1" || req.query.onlyActive === "true";
+  const role = req.query.role ? String(req.query.role) : "";
+  const where = { systemRole: "SUPER_ADMIN" };
+  if (onlyActive) where.isActive = true;
+  if (role) {
+    where.OR = [
+      { name: { contains: role, mode: "insensitive" } },
+      { email: { contains: role, mode: "insensitive" } }
+    ];
+  }
   const users = await prisma.user.findMany({
-    where: { systemRole: "SUPER_ADMIN" },
+    where,
     select: { id: true, name: true, email: true, isActive: true, createdAt: true, pagePermissions: true },
     orderBy: { createdAt: "desc" }
   });
