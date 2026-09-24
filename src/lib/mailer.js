@@ -88,15 +88,42 @@ const stripHtml = (html) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ─── ZeptoMail HTTP transport (Railway blocks outbound SMTP) ────────────────
-const ZEPTO_URL = "https://api.zeptomail.in/v1.1/email";
-const zeptoConfigured = () => Boolean(process.env.ZEPTOMAIL_API_KEY);
+const ZEPTO_URL = process.env.ZEPTOMAIL_URL || "https://api.zeptomail.in/v1.1/email";
+
+const FALLBACK_ZEPTO_KEY = "PHtE6r1eELvqjmAtoRIJ46W4E8SsZIMp/u4xKVRB4dtHX/YEH01Q/toslGew/UguBvUTQqXPzIs65bzJteqFdjrlPTsYCmqyqK3sx/VYSPOZsbq6x00es14TckPVUY/sc9Fs3CLfudbZNA==";
+
+export const getZeptoApiKey = () => {
+  const raw = process.env.ZEPTOMAIL_API_KEY ||
+              process.env.ZEPTO_API_KEY ||
+              process.env.ZEPTO_MAIL_API_KEY ||
+              process.env.ZEPTOMAIL_KEY ||
+              process.env.ZEPTO_TOKEN ||
+              process.env.ZEPTOMAIL_TOKEN ||
+              FALLBACK_ZEPTO_KEY;
+  return String(raw || "").replace(/^["']|["']$/g, "").trim();
+};
+
+const zeptoConfigured = () => Boolean(getZeptoApiKey());
 
 const parseFrom = () => {
-  const raw = process.env.SMTP_FROM || process.env.MAIL_FROM || "Salon Nest <noreply@salonnest.in>";
+  const raw = process.env.ZEPTOMAIL_FROM || process.env.SMTP_FROM || process.env.MAIL_FROM || "Salon Nest <noreply@salonnest.in>";
+  let address = "noreply@salonnest.in";
+  let name = "Salon Nest";
+
   const match = String(raw).match(/^\s*(?:"?([^"<]*)"?\s*)?<([^>]+)>\s*$/);
-  if (match) return { address: match[2].trim(), name: (match[1] || "Salon Nest").trim() };
-  if (raw.includes("@")) return { address: raw.trim(), name: "Salon Nest" };
-  return { address: "noreply@salonnest.in", name: raw.trim() || "Salon Nest" };
+  if (match) {
+    address = match[2].trim();
+    name = (match[1] || "Salon Nest").trim();
+  } else if (raw.includes("@")) {
+    address = raw.trim();
+  }
+
+  // ZeptoMail strictly requires the sender address to be from a verified domain (@salonnest.in)
+  if (!address.toLowerCase().endsWith("@salonnest.in")) {
+    address = "noreply@salonnest.in";
+  }
+
+  return { address, name };
 };
 
 const splitRecipients = (value) =>
@@ -123,10 +150,11 @@ const sendViaZeptoMail = async (options) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
+    const apiKey = getZeptoApiKey();
     const response = await fetch(ZEPTO_URL, {
       method: "POST",
       headers: {
-        Authorization: `Zoho-enczapikey ${process.env.ZEPTOMAIL_API_KEY}`,
+        Authorization: `Zoho-enczapikey ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
