@@ -5,7 +5,7 @@ import { defaultOwnerPermissions } from "../lib/permissions.js";
 export const authMiddleware = async (req, res, next) => {
   try {
     const url = req.originalUrl || req.path || "";
-    if (url.includes("/public") || url.includes("/auth") || url.includes("/test-email") || url.includes("/uploads")) {
+    if (url.startsWith("/api/v1/public") || url.startsWith("/api/v1/auth") || url.includes("/test-email") || url.includes("/uploads") || url.includes("/zoho/callback") || url.includes("/health") || url.includes("/ready")) {
       return next();
     }
     let token = null;
@@ -73,7 +73,16 @@ export const authMiddleware = async (req, res, next) => {
     const mergedPermissions = membership
       ? membership.salonRole === "SALON_OWNER"
         ? { ...defaultOwnerPermissions, ...(membership.permissions || {}) }
-        : (membership.permissions || {})
+        : (await (async () => {
+            if (membership.customRoleId) {
+              const customRole = await prisma.customRole.findFirst({ where: { id: membership.customRoleId, salonId: resolvedSalonId } });
+              if (customRole) {
+                const base = { ...(membership.permissions || {}), ...(customRole.permissions || {}) };
+                return base;
+              }
+            }
+            return membership.permissions || {};
+          })())
       : null;
 
     req.user = {

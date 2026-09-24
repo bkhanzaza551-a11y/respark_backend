@@ -52,7 +52,10 @@ const forceBranchForUploads = (req, res, next) => {
 
 const findScoped = (model, salonId, id) => prisma[model].findFirst({ where: { id, salonId } });
 const toAmount = (value) => Number(value || 0);
-const normalizeBranchId = (value) => (value ? String(value) : null);
+const normalizeBranchId = (value) => {
+  if (!value || value === "undefined" || value === "null" || value === "ALL") return null;
+  return String(value);
+};
 const withBranchFilter = (salonId, branchId, req) => {
   if (req?.user?.salonRole && req.user.salonRole !== "SALON_OWNER" && req.user.branchId) {
     return { salonId, branchId: req.user.branchId };
@@ -128,7 +131,9 @@ const STAFF_SELF_SERVICE_DEFAULTS = {
   feedback: ["view"],
   branches: ["view"],
   notifications: ["view", "edit"],
-  enquiries: ["view", "create", "edit"]
+  enquiries: ["view", "create", "edit"],
+  reports: ["view"],
+  support: ["view"]
 };
 
 const resolveMembershipPermissions = async (salonId, customRoleId, explicitPermissions) => {
@@ -247,8 +252,8 @@ const createLoginUserForSalon = async (salonId, payload) => {
 ownerRouter.get("/dashboard", requireSalonPermission("dashboard", "view"), async (req, res) => {
   const branchId = normalizeBranchId(req.query.branchId);
   const invoiceWhere = withBranchFilter(req.salonId, branchId, req);
-  const serviceWhere = { salonId: req.salonId, isActive: true, ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) };
-  const userWhere = { salonId: req.salonId, ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}) };
+  const serviceWhere = { salonId: req.salonId, isActive: true, ...(branchId ? { branchId } : {}) };
+  const userWhere = { salonId: req.salonId, ...(branchId ? { branchId } : {}) };
   const branchWhere = { salonId: req.salonId, isActive: true };
   const appointmentWhere = {
     salonId: req.salonId,
@@ -2073,10 +2078,25 @@ ownerRouter.post("/custom-roles", requireSalonPermission("staff", "create"), val
 ownerRouter.patch("/custom-roles/:id", requireSalonPermission("staff", "edit"), validate(schemas.customRole), async (req, res) => {
   const role = await prisma.customRole.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
   if (!role) return res.status(404).json({ message: "Custom role not found" });
-  res.json(await prisma.customRole.update({
+  const updatedPerms = stripDeletePerms(req.body.permissions);
+  const updated = await prisma.customRole.update({
     where: { id: role.id },
-    data: { name: req.body.name, description: req.body.description || null, permissions: stripDeletePerms(req.body.permissions) }
-  }));
+    data: { name: req.body.name, description: req.body.description || null, permissions: updatedPerms }
+  });
+  const affectedUsers = await prisma.userSalon.findMany({ where: { customRoleId: role.id, salonId: req.salonId } });
+  if (affectedUsers.length) {
+    const newPerms = { ...STAFF_SELF_SERVICE_DEFAULTS, ...updatedPerms };
+    for (const [k, v] of Object.entries(newPerms)) { if (Array.isArray(v)) newPerms[k] = v.filter((a) => a !== "delete"); }
+    await prisma.userSalon.updateMany({ where: { customRoleId: role.id, salonId: req.salonId }, data: { permissions: newPerms } });
+  }
+  res.json(updated);
+});
+ownerRouter.delete("/custom-roles/:id", requireSalonPermission("staff", "edit"), async (req, res) => {
+  const role = await prisma.customRole.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
+  if (!role) return res.status(404).json({ message: "Custom role not found" });
+  await prisma.userSalon.updateMany({ where: { customRoleId: role.id, salonId: req.salonId }, data: { customRoleId: null, permissions: STAFF_SELF_SERVICE_DEFAULTS } });
+  await prisma.customRole.delete({ where: { id: role.id } });
+  res.json({ message: "Custom role deleted" });
 });
 ownerRouter.post("/users", requireSalonPermission("staff", "create"), validate(schemas.ownerUser), async (req, res) => {
   const result = await createLoginUserForSalon(req.salonId, req.body);
@@ -2098,7 +2118,7 @@ ownerRouter.patch("/users/:id", requireSalonPermission("staff", "edit"), validat
     const firstBranch = await prisma.branch.findFirst({ where: { salonId: req.salonId, isActive: true }, orderBy: { createdAt: "asc" } });
     if (firstBranch) branchId = firstBranch.id;
   }
-  const customRoleId = req.body.customRoleId === null ? null : (req.body.customRoleId ?? row.customRoleId ?? null);
+  const customRoleId = req.body.customRoleId === null ? null : (req.body.customRoleId !== undefined ? req.body.customRoleId : (req.body.permissions !== undefined ? null : (row.customRoleId ?? null)));
   if (branchId) await ensureBranch(req.salonId, branchId);
   const resolvedPermissions = await resolveMembershipPermissions(req.salonId, customRoleId, req.body.permissions);
   if (Array.isArray(req.body.serviceIds) && req.body.serviceIds.length) {
@@ -2185,7 +2205,7 @@ ownerRouter.patch("/staff-users/:id", requireSalonPermission("staff", "edit"), v
     if (dup) return res.status(400).json({ message: "Another staff member already uses this phone number" });
   }
   const branchId = req.body.branchId === null ? null : normalizeBranchId(req.body.branchId ?? row.branchId);
-  const customRoleId = req.body.customRoleId === null ? null : (req.body.customRoleId ?? row.customRoleId ?? null);
+  const customRoleId = req.body.customRoleId === null ? null : (req.body.customRoleId !== undefined ? req.body.customRoleId : (req.body.permissions !== undefined ? null : (row.customRoleId ?? null)));
   if (branchId) await ensureBranch(req.salonId, branchId);
   const resolvedPermissions = await resolveMembershipPermissions(req.salonId, customRoleId, req.body.permissions);
   const updated = await prisma.userSalon.update({
@@ -2325,6 +2345,27 @@ ownerRouter.post("/support-tickets/:id/messages", requireSalonPermission("suppor
       details: req.body.attachmentUrl ? "Salon reply sent with attachment placeholder" : "Salon reply sent",
       fromStatus: ticket.status,
       toStatus: "OPEN"
+    }
+  });
+  res.json(await prisma.supportTicket.findUnique({ where: { id: ticket.id }, include: { messages: { orderBy: { createdAt: "asc" } }, events: { orderBy: { createdAt: "asc" } } } }));
+});
+ownerRouter.patch("/support-tickets/:id", requireSalonPermission("support", "edit"), async (req, res) => {
+  const ticket = await prisma.supportTicket.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
+  if (!ticket) return res.status(404).json({ message: "Support ticket not found" });
+  const { status, priority } = req.body;
+  const updateData = {};
+  if (status) updateData.status = status;
+  if (priority) updateData.priority = priority;
+  if (Object.keys(updateData).length === 0) return res.status(400).json({ message: "No valid fields to update" });
+  await prisma.supportTicket.update({ where: { id: ticket.id }, data: updateData });
+  await prisma.supportTicketEvent.create({
+    data: {
+      ticketId: ticket.id,
+      eventType: "UPDATED",
+      actorName: req.user.name,
+      details: `Ticket updated: ${Object.keys(updateData).join(", ")}`,
+      fromStatus: ticket.status,
+      toStatus: status || ticket.status
     }
   });
   res.json(await prisma.supportTicket.findUnique({ where: { id: ticket.id }, include: { messages: { orderBy: { createdAt: "asc" } }, events: { orderBy: { createdAt: "asc" } } } }));
@@ -2633,10 +2674,173 @@ ownerRouter.get("/reports/trends", requireSalonPermission("reports", "view"), as
   });
 });
 
+ownerRouter.get("/subscription", async (req, res) => {
+  try {
+    const sub = await prisma.subscription.findFirst({
+      where: { salonId: req.user.salonId },
+      include: { plan: true },
+      orderBy: { startsAt: "desc" }
+    });
+    res.json(sub || null);
+  } catch {
+    res.json(null);
+  }
+});
+
+ownerRouter.get("/products", async (req, res) => {
+  const where = { salonId: req.user.salonId, isActive: true };
+  if (req.query.branchId) where.branchId = req.query.branchId;
+  const products = await prisma.product.findMany({
+    where,
+    include: { category: true, branch: { select: { id: true, name: true } } },
+    orderBy: { name: "asc" }
+  });
+  res.json(products);
+});
+
+ownerRouter.get("/product-requirements", async (req, res) => {
+  const where = {};
+  if (req.query.status) where.status = req.query.status;
+  if (req.query.priority) where.priority = req.query.priority;
+  if (req.query.branchId) where.branchId = req.query.branchId;
+  if (req.query.q) {
+    where.OR = [
+      { productName: { contains: req.query.q, mode: "insensitive" } },
+      { description: { contains: req.query.q, mode: "insensitive" } },
+      { vendor: { contains: req.query.q, mode: "insensitive" } }
+    ];
+  }
+  const rows = await prisma.productRequirement.findMany({ where, orderBy: { createdAt: "desc" } });
+  res.json(rows);
+});
+
+ownerRouter.post("/product-requirements", async (req, res) => {
+  const row = await prisma.productRequirement.create({ data: {
+    productName: req.body.productName,
+    description: req.body.description || null,
+    category: req.body.category || null,
+    quantity: req.body.requiredQty || req.body.quantity || 1,
+    unitPrice: req.body.unitCost || req.body.unitPrice || null,
+    priority: req.body.priority || "MEDIUM",
+    status: req.body.status || "PENDING",
+    vendor: req.body.vendor || null
+  }});
+  res.status(201).json(row);
+});
+
+ownerRouter.patch("/product-requirements/:id", async (req, res) => {
+  const existing = await prisma.productRequirement.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ message: "Not found" });
+  const data = {};
+  if (req.body.productName !== undefined) data.productName = req.body.productName;
+  if (req.body.description !== undefined) data.description = req.body.description;
+  if (req.body.category !== undefined) data.category = req.body.category;
+  if (req.body.requiredQty !== undefined || req.body.quantity !== undefined) data.quantity = req.body.requiredQty || req.body.quantity;
+  if (req.body.unitCost !== undefined || req.body.unitPrice !== undefined) data.unitPrice = req.body.unitCost || req.body.unitPrice;
+  if (req.body.priority !== undefined) data.priority = req.body.priority;
+  if (req.body.status !== undefined) data.status = req.body.status;
+  if (req.body.vendor !== undefined) data.vendor = req.body.vendor;
+  res.json(await prisma.productRequirement.update({ where: { id: req.params.id }, data }));
+});
+
+ownerRouter.delete("/product-requirements/:id", async (req, res) => {
+  await prisma.productRequirement.delete({ where: { id: req.params.id } });
+  res.json({ message: "Deleted" });
+});
+
+ownerRouter.get("/staff-requirements", requireSalonPermission("staff", "view"), async (req, res) => {
+  const where = { salonId: req.salonId };
+  if (req.query.status) where.status = req.query.status;
+  if (req.query.urgency) where.urgency = req.query.urgency;
+  if (req.query.branchId) where.branchId = req.query.branchId;
+  if (req.query.department) where.department = req.query.department;
+  if (req.query.q) {
+    where.OR = [
+      { title: { contains: req.query.q, mode: "insensitive" } },
+      { description: { contains: req.query.q, mode: "insensitive" } },
+      { department: { contains: req.query.q, mode: "insensitive" } },
+      { skills: { contains: req.query.q, mode: "insensitive" } }
+    ];
+  }
+  const rows = await prisma.staffRequirement.findMany({ where, orderBy: { createdAt: "desc" } });
+  res.json(rows);
+});
+
+ownerRouter.post("/staff-requirements", requireSalonPermission("staff", "create"), async (req, res) => {
+  const skillsStr = Array.isArray(req.body.skills) ? req.body.skills.join(",") : (req.body.skills || null);
+  const row = await prisma.staffRequirement.create({ data: {
+    salonId: req.salonId,
+    branchId: req.body.branchId || null,
+    title: req.body.title,
+    description: req.body.description || null,
+    department: req.body.department || null,
+    position: req.body.position || null,
+    salary: req.body.salary || null,
+    shift: req.body.shift || "Full-Time",
+    urgency: req.body.urgency || "MEDIUM",
+    skills: skillsStr,
+    count: Number(req.body.quantity) || Number(req.body.count) || 1,
+    priority: req.body.priority || "MEDIUM",
+    status: req.body.status || "OPEN"
+  }});
+  res.status(201).json(row);
+});
+
+ownerRouter.patch("/staff-requirements/:id", requireSalonPermission("staff", "edit"), async (req, res) => {
+  const existing = await prisma.staffRequirement.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
+  if (!existing) return res.status(404).json({ message: "Not found" });
+  const data = {};
+  if (req.body.title !== undefined) data.title = req.body.title;
+  if (req.body.description !== undefined) data.description = req.body.description;
+  if (req.body.department !== undefined) data.department = req.body.department;
+  if (req.body.position !== undefined) data.position = req.body.position;
+  if (req.body.salary !== undefined) data.salary = req.body.salary;
+  if (req.body.shift !== undefined) data.shift = req.body.shift;
+  if (req.body.urgency !== undefined) data.urgency = req.body.urgency;
+  if (req.body.priority !== undefined) data.priority = req.body.priority;
+  if (req.body.status !== undefined) data.status = req.body.status;
+  if (req.body.branchId !== undefined) data.branchId = req.body.branchId || null;
+  if (req.body.quantity !== undefined || req.body.count !== undefined) data.count = Number(req.body.quantity) || Number(req.body.count);
+  if (req.body.skills !== undefined) data.skills = Array.isArray(req.body.skills) ? req.body.skills.join(",") : (req.body.skills || null);
+  res.json(await prisma.staffRequirement.update({ where: { id: req.params.id }, data }));
+});
+
+ownerRouter.delete("/staff-requirements/:id", requireSalonPermission("staff", "delete"), async (req, res) => {
+  const existing = await prisma.staffRequirement.findFirst({ where: { id: req.params.id, salonId: req.salonId } });
+  if (!existing) return res.status(404).json({ message: "Not found" });
+  await prisma.staffRequirement.delete({ where: { id: req.params.id } });
+  res.json({ message: "Deleted" });
+});
 
 
 
 
+
+ownerRouter.get("/salon-details", requireSalonPermission("settings", "view"), async (req, res) => {
+  const salon = await prisma.salon.findUnique({
+    where: { id: req.salonId },
+    select: {
+      id: true, name: true, slug: true, businessType: true, email: true, phone: true,
+      address: true, city: true, currency: true, taxRate: true, status: true,
+      createdAt: true, trialStartsAt: true, trialEndsAt: true,
+      _count: { select: { branches: true, users: true, services: true, customers: true, invoices: true, products: true } }
+    }
+  });
+  if (!salon) return res.status(404).json({ message: "Salon not found" });
+
+  const subscription = await prisma.subscription.findFirst({
+    where: { salonId: req.salonId },
+    include: { plan: { select: { id: true, name: true, branchLimit: true, userLimit: true, customerLimit: true, invoiceLimit: true, storageLimit: true, monthlyPrice: true, yearlyPrice: true } } },
+    orderBy: { startsAt: "desc" }
+  });
+
+  const branches = await prisma.branch.findMany({
+    where: { salonId: req.salonId },
+    select: { id: true, name: true, isActive: true }
+  });
+
+  res.json({ salon, subscription: subscription || null, branches });
+});
 
 registerPhase2OwnerRoutes(ownerRouter);
 registerPhase3OwnerRoutes(ownerRouter);

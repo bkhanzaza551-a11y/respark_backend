@@ -35,6 +35,9 @@ const getAllowedOrigins = (overrideOrigins = null) => {
     "https://skillify-frontend.vercel.app",
     "https://skillify-frontend-phi.vercel.app",
     "https://respark-frontend-six.vercel.app",
+    "https://salonnest-frontend.vercel.app",
+    "https://salonnest-frontend-phi.vercel.app",
+    "https://saas-seven-blush-46.vercel.app",
     "http://127.0.0.1:5173",
     "http://localhost:5173"
   ]);

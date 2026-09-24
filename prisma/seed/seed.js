@@ -5,8 +5,8 @@ import { defaultOwnerPermissions } from "../../src/lib/permissions.js";
 const prisma = new PrismaClient();
 
 async function main() {
-  const superAdminEmail = "vipin@ashokagroup.org";
-  const superAdminPassword = "9000442442";
+  const superAdminEmail = "superadmin@salonnest.in";
+  const ownerEmail = "owner@salonnest.in";
 
   console.log("Cleaning up existing database records...");
 
@@ -24,33 +24,106 @@ async function main() {
   };
 
   const tables = [
-    "CustomerTimeline",
-    "CustomerMembership",
-    "CustomerPackage",
-    "PackageService",
-    "MembershipPlanService",
-    "InvoiceItem",
-    "Payment",
-    "Invoice",
+    "WebsiteVisit",
+    "AuditLog",
+    "Notification",
+    "SupportTicketEvent",
+    "SupportTicketMessage",
+    "SupportTicket",
+    "PasswordSetupToken",
+    "AppointmentLog",
     "AppointmentServiceStaff",
     "AppointmentService",
     "Appointment",
+    "InvoiceItem",
+    "Payment",
+    "Invoice",
     "StockMovement",
+    "StockTransferItem",
+    "StockTransfer",
+    "StockReconciliationItem",
+    "StockReconciliation",
+    "PurchaseOrderItem",
+    "PurchaseOrder",
+    "VendorItem",
+    "Vendor",
     "Product",
     "ProductCategory",
+    "ServiceConsumable",
+    "ServiceTax",
     "Service",
     "ServiceCategory",
     "StaffSchedule",
+    "StaffBreak",
+    "StaffServiceAssignment",
+    "AttendanceRecord",
+    "LeaveRequest",
     "UserSalon",
-    "Branch",
     "CustomRole",
-    "Subscription",
+    "Branch",
+    "CatalogBanner",
+    "CatalogOffer",
+    "CatalogAnalyticsEvent",
     "CatalogSetting",
     "EcommerceSetting",
+    "OnlineOrderItem",
+    "OnlineOrderStatusLog",
+    "OnlineOrder",
     "SalonSetting",
+    "CampaignLog",
+    "CampaignConversion",
+    "Campaign",
+    "CampaignTemplate",
+    "MessageTemplate",
+    "CustomerCoupon",
+    "CustomerNotification",
+    "CustomerFeedback",
+    "FeedbackType",
+    "LoyaltyTransaction",
+    "LoyaltyRule",
+    "CouponRedemption",
+    "Coupon",
+    "GiftCardRedemption",
+    "GiftCard",
+    "WalletTransaction",
+    "Wallet",
+    "CustomerTimeline",
+    "CustomerMembership",
+    "MembershipUsage",
+    "MembershipPlanService",
+    "MembershipPlan",
+    "PackageService",
+    "PackageUsage",
+    "CustomerPackage",
+    "EnquiryFollowUp",
+    "Enquiry",
+    "ExpenseCategory",
+    "Expense",
+    "ReferralCode",
+    "ReferralCouponCategory",
+    "ReferralCouponService",
+    "ReferralRule",
+    "AffiliateCreditTransaction",
+    "CreditPayoutRequest",
+    "AffiliateCreditWallet",
+    "TaxSlab",
+    "TaxRate",
+    "PnlCategory",
+    "Designation",
+    "ShiftDay",
+    "ShiftBreak",
+    "Shift",
+    "WhatsAppLog",
+    "WhatsAppAutomation",
+    "WhatsAppSetting",
+    "SubscriptionHistory",
+    "Subscription",
+    "DemoLead",
     "User",
     "Salon",
-    "Plan"
+    "Plan",
+    "StaffRequirement",
+    "ProductRequirement"
   ];
 
   for (const table of tables) {
@@ -94,10 +167,18 @@ async function main() {
   const superAdmin = await prisma.user.create({
     data: {
       email: superAdminEmail,
-      name: "Vipin",
+      name: "Super Admin",
       systemRole: "SUPER_ADMIN",
-      passwordHash: await bcrypt.hash(superAdminPassword, 10),
-      isActive: true
+      passwordHash: await bcrypt.hash("Admin@123", 10)
+    }
+  });
+
+  const owner = await prisma.user.create({
+    data: {
+      email: ownerEmail,
+      name: "Salon Owner",
+      systemRole: "SALON_USER",
+      passwordHash: await bcrypt.hash("Owner@123", 10)
     }
   });
 
@@ -105,19 +186,19 @@ async function main() {
 
   const salon = await prisma.salon.create({
     data: {
-      name: "Skillify",
-      slug: "skillify",
+      name: "Demo Salon",
+      slug: "demo-salon",
       businessType: "Salon",
-      email: superAdminEmail,
-      phone: "+919000442442",
-      city: "Indore",
+      email: "demo@salon.local",
+      phone: "+913001112233",
+      city: "Delhi",
       country: "India",
       currency: "INR",
       taxRate: 18,
       trialStartsAt: new Date(),
-      trialEndsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       status: "ACTIVE",
-      featureFlags: { pos: true, appointments: true, inventory: true, reports: true, publicCatalog: true, digitalCatalog: true, customerPortal: true, ecommerce: true, onlineOrders: true, campaigns: true, messageTemplates: true, catalogAnalytics: true, attendance: true }
+      featureFlags: { pos: true, appointments: true, inventory: true, reports: true, publicCatalog: true, digitalCatalog: true, customerPortal: true, ecommerce: true, onlineOrders: true, campaigns: true, messageTemplates: true, catalogAnalytics: true }
     }
   });
 
@@ -125,7 +206,7 @@ async function main() {
 
   await prisma.userSalon.create({
     data: {
-      userId: superAdmin.id,
+      userId: owner.id,
       salonId: salon.id,
       salonRole: "SALON_OWNER",
       permissions: defaultOwnerPermissions
@@ -201,12 +282,12 @@ async function main() {
   console.log("Seeding staff users (6 total)...");
 
   const staffData = [
-    { name: "Rohan Sharma", email: "rohan@skillify.local", role: "STAFF", branchId: branch1.id, customRoleId: seniorStylistRole.id, phone: "+919876543231" },
-    { name: "Pooja Patel", email: "pooja@skillify.local", role: "STAFF", branchId: branch2.id, customRoleId: seniorStylistRole.id, phone: "+919876543232" },
-    { name: "Amit Kumar", email: "amit@skillify.local", role: "STAFF", branchId: branch3.id, phone: "+919876543233" },
-    { name: "Sneha Reddy", email: "sneha@skillify.local", role: "MANAGER", branchId: branch1.id, phone: "+919876543234" },
-    { name: "Vikram Singh", email: "vikram@skillify.local", role: "RECEPTIONIST", branchId: branch4.id, customRoleId: receptionistRole.id, phone: "+919876543235" },
-    { name: "Neha Gupta", email: "neha@skillify.local", role: "STAFF", branchId: branch4.id, phone: "+919876543236" }
+    { name: "Rohan Sharma", email: "rohan@salonnest.in", role: "STAFF", branchId: branch1.id, customRoleId: seniorStylistRole.id, phone: "+919876543231" },
+    { name: "Pooja Patel", email: "pooja@salonnest.in", role: "STAFF", branchId: branch2.id, customRoleId: seniorStylistRole.id, phone: "+919876543232" },
+    { name: "Amit Kumar", email: "amit@salonnest.in", role: "STAFF", branchId: branch3.id, phone: "+919876543233" },
+    { name: "Sneha Reddy", email: "sneha@salonnest.in", role: "MANAGER", branchId: branch1.id, phone: "+919876543234" },
+    { name: "Vikram Singh", email: "vikram@salonnest.in", role: "RECEPTIONIST", branchId: branch4.id, customRoleId: receptionistRole.id, phone: "+919876543235" },
+    { name: "Neha Gupta", email: "neha@salonnest.in", role: "STAFF", branchId: branch4.id, phone: "+919876543236" }
   ];
 
   for (const staff of staffData) {
