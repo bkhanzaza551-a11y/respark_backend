@@ -5,7 +5,7 @@ import { generateRawPasswordSetupToken, generateTemporaryPassword, hashPasswordS
 import { sendMail } from "./mailer.js";
 import { signLoginAccessToken } from "./tokens.js";
 
-const frontendBaseUrl = () => process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173";
+const frontendBaseUrl = () => process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app";
 
 const slugify = (value) =>
   String(value || "")
@@ -232,10 +232,14 @@ export const approveDemoLead = async ({ leadId, actorName, trialDays = 7, planId
       html: emailContent.html
     });
 
-    await prisma.demoLead.update({
-      where: { id: result.lead.id },
-      data: { inviteSentAt: new Date() }
-    });
+    if (delivery && delivery.mode !== "failed") {
+      await prisma.demoLead.update({
+        where: { id: result.lead.id },
+        data: { inviteSentAt: new Date() }
+      });
+    } else {
+      emailError = "Email delivery failed or rejected by provider";
+    }
   } catch (error) {
     emailError = error?.message || "SMTP delivery failed";
     delivery = { mode: "failed", messageId: null, preview: null };

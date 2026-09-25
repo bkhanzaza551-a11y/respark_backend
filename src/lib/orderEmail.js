@@ -210,7 +210,7 @@ export const sendOrderConfirmationEmail = async ({ order, salonId }) => {
     const salon = await prisma.salon.findUnique({ where: { id: salonId } });
     if (!salon) return { skipped: true, reason: "salon-not-found" };
 
-    const siteUrl = process.env.FRONTEND_APP_URL || "http://localhost:5173";
+    const siteUrl = process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app";
     const html = buildOrderConfirmationHtml({ order, salon, siteUrl });
 
     const result = await sendMail({

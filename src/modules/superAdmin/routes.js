@@ -162,6 +162,24 @@ superAdminRouter.post("/salons", validate(schemas.salon), asyncHandler(async (re
           isActive: true
         }
       });
+    // Auto-create a 1-year active subscription so salon is never locked out
+    const defaultPlan = await tx.plan.findFirst({ orderBy: { yearlyPrice: "asc" } });
+    if (defaultPlan) {
+      const startsAt = new Date();
+      const endsAt = new Date(startsAt);
+      endsAt.setFullYear(endsAt.getFullYear() + 1);
+
+      await tx.subscription.create({
+        data: {
+          salonId: createdSalon.id,
+          planId: defaultPlan.id,
+          status: "ACTIVE",
+          paymentStatus: "PAID",
+          notes: "Auto-created 1-year active subscription on salon creation",
+          startsAt,
+          endsAt
+        }
+      });
     }
 
     return createdSalon;
@@ -490,11 +508,11 @@ superAdminRouter.post("/subscriptions/:id/remind", asyncHandler(async (req, res)
   });
   if (!owner?.user) return res.status(404).json({ message: "No salon owner found for this subscription." });
 
-  const loginAccessToken = signLoginAccessToken({ userId: owner.user.id, email: owner.user.email, salonId: subscription.salonId });
-  const loginLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/login?email=${encodeURIComponent(owner.user.email)}&access=${encodeURIComponent(loginAccessToken)}`;
+  const frontendUrl = process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app";
+  const loginLink = `${frontendUrl}/login?email=${encodeURIComponent(owner.user.email)}&access=${encodeURIComponent(loginAccessToken)}`;
   const diffMs = new Date(subscription.endsAt) - new Date();
   const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-  const renewalLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/login?email=${encodeURIComponent(owner.user.email)}&access=${encodeURIComponent(loginAccessToken)}`;
+  const renewalLink = `${frontendUrl}/login?email=${encodeURIComponent(owner.user.email)}&access=${encodeURIComponent(loginAccessToken)}`;
 
   let delivery = null;
   let emailError = null;
@@ -690,6 +708,15 @@ superAdminRouter.post("/demo-leads/:id/send-purchase-link", asyncHandler(async (
     emailError = error?.message || "Purchase link email failed";
     delivery = { mode: "failed", messageId: null, preview: null };
   }
+
+  await prisma.demoLead.update({
+    where: { id: lead.id },
+    data: {
+      reviewNote: `OFFER:${JSON.stringify({ planId: plan.id, finalPrice: price })}`,
+      reviewedAt: new Date(),
+      reviewedByName: req.user?.name || "SUPER_ADMIN"
+    }
+  }).catch(() => {});
 
   await createAuditLog({
     salonId: lead.salonId || null,

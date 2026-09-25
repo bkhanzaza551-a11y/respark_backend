@@ -7,7 +7,7 @@ const publicFeatureEnabled = (flags = {}, key) => flags?.[key] !== false;
 
 export const defaultCatalogTheme = "#0f766e";
 
-export const buildCatalogLink = (slug) => `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/salon/${slug}`;
+export const buildCatalogLink = (slug) => `${process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app"}/salon/${slug}`;
 
 export const normalizeBeforeAfterGallery = (value) => {
   if (!Array.isArray(value)) return [];
@@ -630,9 +630,9 @@ export const resolveTemplateContext = async (salonId, context = {}) => {
     order_number: order?.orderNumber || templateFallbacks.order_number,
     order_amount: order ? Number(order.total || 0).toFixed(2) : templateFallbacks.order_amount,
     catalog_link: salon ? buildCatalogLink(salon.slug) : templateFallbacks.catalog_link,
-    payment_link: invoice?.paymentLinkToken ? `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/pay/${invoice.paymentLinkToken}` : templateFallbacks.payment_link,
-    feedback_link: context.feedback_link || (appointment?.id ? `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/feedback?appointmentId=${appointment.id}` : (invoice?.id ? `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/feedback?invoiceId=${invoice.id}` : "")),
-    invoice_link: context.invoice_link || (invoice?.id ? `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/invoice/${invoice.id}` : (order?.invoiceId ? `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/invoice/${order.invoiceId}` : "")),
+    payment_link: invoice?.paymentLinkToken ? `${process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app"}/pay/${invoice.paymentLinkToken}` : templateFallbacks.payment_link,
+    feedback_link: context.feedback_link || (appointment?.id ? `${process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app"}/feedback?appointmentId=${appointment.id}` : (invoice?.id ? `${process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app"}/feedback?invoiceId=${invoice.id}` : "")),
+    invoice_link: context.invoice_link || (invoice?.id ? `${process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app"}/invoice/${invoice.id}` : (order?.invoiceId ? `${process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app"}/invoice/${order.invoiceId}` : "")),
     referral_code: context.referralCode || context.referral_code || "",
     gift_card_code: context.giftCardCode || context.gift_card_code || "",
     gift_card_amount: context.giftCardAmount != null ? String(context.giftCardAmount) : (context.gift_card_amount != null ? String(context.gift_card_amount) : ""),

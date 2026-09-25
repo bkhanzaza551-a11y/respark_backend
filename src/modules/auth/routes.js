@@ -299,8 +299,9 @@ authRouter.post("/forgot-password", validate(schemas.forgotPassword), async (req
     }
   });
 
-  const resetLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/reset-password?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(user.email)}`;
-  const loginLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/login?email=${encodeURIComponent(user.email)}`;
+  const frontendUrl = process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app";
+  const resetLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(user.email)}`;
+  const loginLink = `${frontendUrl}/login?email=${encodeURIComponent(user.email)}`;
 
   await sendMail({
     to: user.email,

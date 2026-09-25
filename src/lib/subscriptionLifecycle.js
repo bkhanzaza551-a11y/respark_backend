@@ -2,7 +2,7 @@ import { prisma } from "./prisma.js";
 import { sendMail } from "./mailer.js";
 import { signLoginAccessToken } from "./tokens.js";
 
-const frontendBaseUrl = () => process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173";
+const frontendBaseUrl = () => process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app";
 
 const formatDate = (value) =>
   new Date(value).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
@@ -154,10 +154,9 @@ export const convertDemoToPaid = async ({ subscriptionId, actorName, planId, end
     : existing.plan;
   if (!targetPlan) return { error: { status: 404, message: "Selected plan not found." } };
 
-  const owner = await getSalonOwner(existing.salonId);
-  if (!owner) return { error: { status: 404, message: "No salon owner found for this subscription." } };
-
-  const activeUntil = endsAt ? new Date(endsAt) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const defaultOneYear = new Date();
+  defaultOneYear.setFullYear(defaultOneYear.getFullYear() + 1);
+  const activeUntil = endsAt ? new Date(endsAt) : defaultOneYear;
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.subscription.update({

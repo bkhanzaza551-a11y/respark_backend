@@ -301,11 +301,22 @@ publicRouter.get("/demo-checkout-info/:leadId/:planId", asyncHandler(async (req,
   const plan = await prisma.plan.findUnique({ where: { id: req.params.planId } });
   if (!plan) return res.status(404).json({ message: "Plan not found" });
 
-  const finalPriceParam = req.query.finalPrice ? Number(req.query.finalPrice) : null;
   const yearlyPrice = Number(plan.yearlyPrice || (plan.monthlyPrice ? plan.monthlyPrice * 12 : 0));
-  const finalPrice = (finalPriceParam !== null && Number.isFinite(finalPriceParam) && finalPriceParam > 0)
-    ? Math.round(finalPriceParam)
-    : Math.round(yearlyPrice);
+  let authorizedPrice = yearlyPrice;
+
+  if (lead.reviewNote && lead.reviewNote.startsWith("OFFER:")) {
+    try {
+      const offerData = JSON.parse(lead.reviewNote.replace("OFFER:", ""));
+      if (offerData.planId === plan.id && Number.isFinite(offerData.finalPrice)) {
+        authorizedPrice = Math.max(0, Math.round(offerData.finalPrice));
+      }
+    } catch {}
+  }
+
+  const finalPriceParam = req.query.finalPrice !== undefined && req.query.finalPrice !== null ? Number(req.query.finalPrice) : null;
+  const finalPrice = (finalPriceParam !== null && Number.isFinite(finalPriceParam) && Math.round(finalPriceParam) === authorizedPrice)
+    ? authorizedPrice
+    : (authorizedPrice !== yearlyPrice ? authorizedPrice : Math.round(yearlyPrice));
   const discountAmount = Math.max(0, yearlyPrice - finalPrice);
 
   res.json({
@@ -426,10 +437,21 @@ publicRouter.post("/demo-checkout/:leadId/razorpay-order", asyncHandler(async (r
   }
 
   const yearlyPrice = Number(plan.yearlyPrice || (plan.monthlyPrice ? plan.monthlyPrice * 12 : 0));
-  const parsedFinalPrice = Number(finalPrice);
-  const payableAmount = (Number.isFinite(parsedFinalPrice) && parsedFinalPrice > 0)
-    ? Math.round(parsedFinalPrice)
-    : Math.round(yearlyPrice);
+  let authorizedPrice = yearlyPrice;
+
+  if (lead.reviewNote && lead.reviewNote.startsWith("OFFER:")) {
+    try {
+      const offerData = JSON.parse(lead.reviewNote.replace("OFFER:", ""));
+      if (offerData.planId === plan.id && Number.isFinite(offerData.finalPrice)) {
+        authorizedPrice = Math.max(0, Math.round(offerData.finalPrice));
+      }
+    } catch {}
+  }
+
+  const parsedFinalPrice = finalPrice !== undefined && finalPrice !== null ? Number(finalPrice) : null;
+  const payableAmount = (parsedFinalPrice !== null && Number.isFinite(parsedFinalPrice) && Math.round(parsedFinalPrice) === authorizedPrice)
+    ? authorizedPrice
+    : authorizedPrice;
 
   const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
   const response = await fetch("https://api.razorpay.com/v1/orders", {
