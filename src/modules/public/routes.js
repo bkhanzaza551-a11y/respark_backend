@@ -298,12 +298,22 @@ publicRouter.get("/demo-checkout-info/:leadId/:planId", asyncHandler(async (req,
   }
   const plan = await prisma.plan.findUnique({ where: { id: req.params.planId } });
   if (!plan) return res.status(404).json({ message: "Plan not found" });
+
+  const finalPriceParam = req.query.finalPrice ? Number(req.query.finalPrice) : null;
+  const yearlyPrice = Number(plan.yearlyPrice || (plan.monthlyPrice ? plan.monthlyPrice * 12 : 0));
+  const finalPrice = (finalPriceParam !== null && Number.isFinite(finalPriceParam) && finalPriceParam > 0)
+    ? Math.round(finalPriceParam)
+    : Math.round(yearlyPrice);
+  const discountAmount = Math.max(0, yearlyPrice - finalPrice);
+
   res.json({
     leadName: lead.name,
     leadEmail: lead.email,
     company: lead.company,
     planName: plan.name,
-    price: plan.monthlyPrice,
+    price: finalPrice,
+    originalPrice: yearlyPrice,
+    discountAmount,
     limits: {
       branches: plan.branchLimit,
       users: plan.userLimit,
@@ -397,7 +407,7 @@ publicRouter.post("/demo-checkout/:leadId", asyncHandler(async (req, res) => {
 }));
 
 publicRouter.post("/demo-checkout/:leadId/razorpay-order", asyncHandler(async (req, res) => {
-  const { planId } = req.body;
+  const { planId, finalPrice } = req.body || {};
   const lead = await prisma.demoLead.findUnique({ where: { id: req.params.leadId } });
   if (!lead) return res.status(404).json({ message: "Demo lead not found" });
   if (lead.status === "CONVERTED" && lead.salonId) {
@@ -413,6 +423,12 @@ publicRouter.post("/demo-checkout/:leadId/razorpay-order", asyncHandler(async (r
     return res.status(503).json({ message: "Payment gateway is not configured. Please contact support to complete your subscription." });
   }
 
+  const yearlyPrice = Number(plan.yearlyPrice || (plan.monthlyPrice ? plan.monthlyPrice * 12 : 0));
+  const parsedFinalPrice = Number(finalPrice);
+  const payableAmount = (Number.isFinite(parsedFinalPrice) && parsedFinalPrice > 0)
+    ? Math.round(parsedFinalPrice)
+    : Math.round(yearlyPrice);
+
   const authHeader = `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`;
   const response = await fetch("https://api.razorpay.com/v1/orders", {
     method: "POST",
@@ -421,7 +437,7 @@ publicRouter.post("/demo-checkout/:leadId/razorpay-order", asyncHandler(async (r
       "Authorization": authHeader
     },
     body: JSON.stringify({
-      amount: plan.monthlyPrice * 100, // in Paise
+      amount: payableAmount * 100, // in Paise
       currency: "INR",
       receipt: `rcpt_${lead.id.substring(0, 8)}_${Date.now().toString().substring(8)}`
     })
@@ -441,7 +457,10 @@ publicRouter.post("/demo-checkout/:leadId/razorpay-order", asyncHandler(async (r
     keyId: keyId,
     leadName: lead.name,
     leadEmail: lead.email,
-    leadPhone: lead.phone
+    leadPhone: lead.phone,
+    company: lead.company,
+    planName: plan.name,
+    price: payableAmount
   });
 }));
 

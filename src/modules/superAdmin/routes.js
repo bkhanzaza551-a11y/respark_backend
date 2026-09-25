@@ -663,17 +663,18 @@ superAdminRouter.post("/demo-leads/:id/send-purchase-link", asyncHandler(async (
   const plan = await prisma.plan.findUnique({ where: { id: planId } });
   if (!plan) return res.status(404).json({ message: "Plan not found" });
 
-  const basePrice = Number(plan.monthlyPrice) || 0;
+  const basePrice = Number(plan.yearlyPrice || (plan.monthlyPrice ? plan.monthlyPrice * 12 : 0)) || 0;
   let price = Number(finalPrice);
   if (!Number.isFinite(price) || price <= 0) {
     const value = Number(discountValue) || 0;
-    price = discountType === "PERCENTAGE"
+    price = (discountType === "PERCENTAGE" || discountType === "percent")
       ? Math.max(0, basePrice - (basePrice * value) / 100)
       : Math.max(0, basePrice - value);
   }
   price = Math.round(price);
 
-  const checkoutLink = `${process.env.FRONTEND_APP_URL || "http://127.0.0.1:5173"}/demo-checkout/${encodeURIComponent(lead.id)}/${encodeURIComponent(plan.id)}`;
+  const frontendUrl = process.env.FRONTEND_APP_URL || "https://saas-frontend-delta-one.vercel.app";
+  const checkoutLink = `${frontendUrl}/demo-checkout/${encodeURIComponent(lead.id)}/${encodeURIComponent(plan.id)}?finalPrice=${encodeURIComponent(price)}`;
   const money = `₹${price.toLocaleString("en-IN")}`;
 
   let delivery = null;
