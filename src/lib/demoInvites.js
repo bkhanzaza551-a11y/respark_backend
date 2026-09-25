@@ -108,7 +108,11 @@ export const approveDemoLead = async ({ leadId, actorName, trialDays = 7, planId
 
   const startsAt = new Date();
   const endsAt = new Date(startsAt);
-  endsAt.setDate(endsAt.getDate() + 30);
+  if (lead.paymentCompleted) {
+    endsAt.setFullYear(endsAt.getFullYear() + 1);
+  } else {
+    endsAt.setDate(endsAt.getDate() + 30);
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const finalSalonName = salonName?.trim() || `${lead.name.split(" ")[0] || "Demo"} Salon`;
@@ -165,8 +169,8 @@ export const approveDemoLead = async ({ leadId, actorName, trialDays = 7, planId
         salonId: salon.id,
         planId: plan.id,
         status: "ACTIVE",
-        paymentStatus: "PAID",
-        notes: "Auto-created active onboarding workspace",
+        paymentStatus: lead.paymentCompleted ? "PAID" : "TRIAL",
+        notes: lead.paymentCompleted ? "Auto-created 1-year annual subscription" : "Auto-created demo trial onboarding workspace",
         startsAt,
         endsAt
       }
@@ -178,8 +182,8 @@ export const approveDemoLead = async ({ leadId, actorName, trialDays = 7, planId
         action: lead.paymentCompleted ? "ONBOARDING_PAID" : "DEMO_APPROVED",
         createdBy: actorName,
         toStatus: "ACTIVE",
-        toPaymentStatus: "PAID",
-        notes: lead.paymentCompleted ? "30-day paid subscription activated from onboarding" : "Active onboarding subscription activated from demo lead approval"
+        toPaymentStatus: lead.paymentCompleted ? "PAID" : "TRIAL",
+        notes: lead.paymentCompleted ? "1-year annual paid subscription activated from onboarding" : "Active onboarding subscription activated from demo lead approval"
       }
     });
     const rawToken = await issuePasswordSetupToken({

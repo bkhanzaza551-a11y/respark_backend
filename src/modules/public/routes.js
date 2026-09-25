@@ -267,17 +267,19 @@ publicRouter.post("/salon/:slug/track", asyncHandler(async (req, res) => {
   const ip = req.headers["x-forwarded-for"] || req.socket?.remoteAddress || null;
   const userAgent = req.headers["user-agent"] || null;
   const referrer = req.headers["referer"] || null;
-  await prisma.websiteVisit.create({
-    data: { salonId: salon.id, path: path || "/", ip, userAgent, referrer }
-  });
+  if (prisma.websiteVisit) {
+    await prisma.websiteVisit.create({
+      data: { salonId: salon.id, path: path || "/", ip, userAgent, referrer }
+    }).catch(() => {});
+  }
   res.json({ ok: true });
 }));
 
 registerPublicPhase3Routes(publicRouter);
 
 publicRouter.get("/plans", asyncHandler(async (req, res) => {
-  const plans = await prisma.plan.findMany({ orderBy: { monthlyPrice: "asc" } });
-  res.json(plans.length ? plans.slice(0, 1) : [
+  const plans = await prisma.plan.findMany({ orderBy: { yearlyPrice: "asc" } });
+  res.json(plans.length ? plans : [
     { id: "starter", name: "Standard Plan", monthlyPrice: 4999, yearlyPrice: 49990, trialDays: 7, branchLimit: 99999, userLimit: 9999, customerLimit: 99999, invoiceLimit: 99999, storageLimit: 999 }
   ]);
 }));

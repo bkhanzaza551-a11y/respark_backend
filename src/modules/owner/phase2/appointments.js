@@ -811,7 +811,7 @@ export const registerAppointmentRoutes = (ownerRouter) => {
     }));
   });
 
-  ownerRouter.get("/staff-availability", requireSalonPermission("staffSchedule", "view"), async (req, res) => {
+  ownerRouter.get(["/staff-availability", "/appointments/staff-availability"], requireSalonPermission("staffSchedule", "view"), async (req, res) => {
     const branchId = normalizeBranchId(req.query.branchId);
     const serviceId = req.query.serviceId ? String(req.query.serviceId) : null;
     const startAt = req.query.startAt ? new Date(String(req.query.startAt)) : null;

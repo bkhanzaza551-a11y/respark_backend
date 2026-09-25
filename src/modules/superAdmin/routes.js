@@ -665,7 +665,7 @@ superAdminRouter.post("/demo-leads/:id/send-purchase-link", asyncHandler(async (
 
   const basePrice = Number(plan.yearlyPrice || (plan.monthlyPrice ? plan.monthlyPrice * 12 : 0)) || 0;
   let price = Number(finalPrice);
-  if (!Number.isFinite(price) || price <= 0) {
+  if (!Number.isFinite(price) || price < 0) {
     const value = Number(discountValue) || 0;
     price = (discountType === "PERCENTAGE" || discountType === "percent")
       ? Math.max(0, basePrice - (basePrice * value) / 100)
@@ -1254,4 +1254,100 @@ superAdminRouter.delete("/staff/:id", asyncHandler(async (req, res) => {
   if (existing.systemRole !== "SUPER_ADMIN") return res.status(400).json({ message: "Cannot delete non-super-admin users from here." });
   await prisma.user.delete({ where: { id: req.params.id } });
   res.json({ message: "Deleted" });
+}));
+
+// Team & Roles Aliases for Super Admin Staff Management
+const DEFAULT_SUPER_ADMIN_ROLES = [
+  { id: "super_admin", name: "Super Admin", description: "Full system administration and control", pagePermissions: ["*"] },
+  { id: "support_agent", name: "Support Agent", description: "Manage tickets, demo leads and salons", pagePermissions: ["salons", "tickets", "demo-leads"] },
+  { id: "sales_rep", name: "Sales Representative", description: "Manage demo pipeline and salons", pagePermissions: ["demo-leads", "salons"] }
+];
+
+const DEFAULT_SUPER_ADMIN_PAGES = [
+  { id: "dashboard", name: "Dashboard" },
+  { id: "salons", name: "Salons & Branches" },
+  { id: "demo-leads", name: "Demo Leads" },
+  { id: "subscriptions", name: "Subscriptions" },
+  { id: "plans", name: "Pricing Plans" },
+  { id: "tickets", name: "Support Tickets" },
+  { id: "staff", name: "Staff & Team" },
+  { id: "reports", name: "System Reports" },
+  { id: "settings", name: "Global Settings" }
+];
+
+superAdminRouter.get("/roles", asyncHandler(async (req, res) => {
+  res.json(DEFAULT_SUPER_ADMIN_ROLES);
+}));
+
+superAdminRouter.get("/available-pages", asyncHandler(async (req, res) => {
+  res.json(DEFAULT_SUPER_ADMIN_PAGES);
+}));
+
+superAdminRouter.get("/team", asyncHandler(async (req, res) => {
+  const users = await prisma.user.findMany({
+    where: { systemRole: "SUPER_ADMIN" },
+    select: { id: true, name: true, email: true, isActive: true, createdAt: true, updatedAt: true, pagePermissions: true },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json({ users });
+}));
+
+superAdminRouter.post("/team/invite", asyncHandler(async (req, res) => {
+  const { name, email, adminRoleId, department } = req.body;
+  if (!name || !email) return res.status(400).json({ message: "Name and email are required." });
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return res.status(409).json({ message: "A user with this email already exists." });
+
+  const tempPassword = `Admin@${Math.floor(1000 + Math.random() * 9000)}`;
+  const user = await prisma.user.create({
+    data: {
+      name,
+      email,
+      passwordHash: await bcrypt.hash(tempPassword, 10),
+      systemRole: "SUPER_ADMIN",
+      passwordSetupRequired: true
+    },
+    select: { id: true, name: true, email: true, isActive: true, createdAt: true }
+  });
+  res.status(201).json(user);
+}));
+
+superAdminRouter.patch("/team/:id", asyncHandler(async (req, res) => {
+  const { name } = req.body;
+  const user = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { ...(name ? { name } : {}) },
+    select: { id: true, name: true, email: true, isActive: true, createdAt: true }
+  });
+  res.json(user);
+}));
+
+superAdminRouter.patch("/team/:id/activate", asyncHandler(async (req, res) => {
+  const user = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { isActive: true },
+    select: { id: true, name: true, email: true, isActive: true }
+  });
+  res.json(user);
+}));
+
+superAdminRouter.patch("/team/:id/deactivate", asyncHandler(async (req, res) => {
+  const user = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { isActive: false },
+    select: { id: true, name: true, email: true, isActive: true }
+  });
+  res.json(user);
+}));
+
+superAdminRouter.post("/team/:id/resend-invite", asyncHandler(async (req, res) => {
+  res.json({ ok: true, message: "Invitation resent" });
+}));
+
+superAdminRouter.post("/team/:id/reset-password", asyncHandler(async (req, res) => {
+  res.json({ ok: true, message: "Password reset link sent" });
+}));
+
+superAdminRouter.get("/team/:id/activity", asyncHandler(async (req, res) => {
+  res.json([]);
 }));

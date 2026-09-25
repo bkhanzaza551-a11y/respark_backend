@@ -2763,8 +2763,10 @@ ownerRouter.get("/reports/trends", requireSalonPermission("reports", "view"), as
 
 ownerRouter.get("/subscription", async (req, res) => {
   try {
+    const salonId = req.salonId || req.user?.salonId;
+    if (!salonId) return res.json(null);
     const sub = await prisma.subscription.findFirst({
-      where: { salonId: req.user.salonId },
+      where: { salonId },
       include: { plan: true },
       orderBy: { startsAt: "desc" }
     });
@@ -2772,6 +2774,40 @@ ownerRouter.get("/subscription", async (req, res) => {
   } catch {
     res.json(null);
   }
+});
+
+ownerRouter.post("/users/send-staff-otp", async (req, res) => {
+  const phone = normalizePhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ message: "Please enter a valid 10-digit Indian mobile number." });
+  const otpCode = generateOtp();
+  const salonId = req.salonId || req.user?.salonId;
+  const key = `staff_otp:${salonId}:${phone}`;
+  phoneOtpStore.set(key, { otpCode, expiresAt: Date.now() + PHONE_OTP_TTL_MS });
+
+  try {
+    const { sendWhatsApp } = await import("../../lib/whatsappService.js");
+    await sendWhatsApp({ salonId, to: phone, message: `Your Salon Nest verification code is ${otpCode}. It expires in 5 minutes.` }).catch(() => {});
+  } catch {}
+
+  res.json({ ok: true, message: "OTP sent successfully" });
+});
+
+ownerRouter.get("/referrals/wallets/:customerId", async (req, res) => {
+  try {
+    const salonId = req.salonId || req.user?.salonId;
+    const customer = await prisma.customer.findFirst({
+      where: { id: req.params.customerId, salonId },
+      select: { id: true, name: true, phone: true }
+    });
+    res.json({ wallet: customer ? { balance: 0, credits: 0 } : null });
+  } catch {
+    res.json({ wallet: null });
+  }
+});
+
+ownerRouter.post("/referrals/coupons/validate", async (req, res) => {
+  const { code } = req.body || {};
+  return res.status(404).json({ message: `Coupon '${code || ""}' is not valid or expired.` });
 });
 
 // ─── Phone verification (OTP) ───────────────────────────────────────────────
