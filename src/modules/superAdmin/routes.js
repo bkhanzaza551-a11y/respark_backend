@@ -240,7 +240,7 @@ const buildSalon360 = async (salonId) => {
     prisma.auditLog.findMany({ where: { salonId }, orderBy: { createdAt: "desc" }, take: 50 }).catch(() => [])
   ]);
 
-  const invoiceAgg = await prisma.invoice.aggregate({ where: { salonId }, _count: { _all: true }, _sum: { total: true } }).catch(() => ({ _count: { _all: 0 }, _sum: { total: null } }));
+  const invoiceAgg = await prisma.invoice.aggregate({ where: { salonId }, _count: { _all: true }, _sum: { total: true, paidAmount: true } }).catch(() => ({ _count: { _all: 0 }, _sum: { total: null, paidAmount: null } }));
 
   return {
     salon,
@@ -256,6 +256,8 @@ const buildSalon360 = async (salonId) => {
       products: await prisma.product.count({ where: { salonId } }).catch(() => 0),
       invoices: invoiceAgg?._count?._all || 0,
       revenue: Number(invoiceAgg?._sum?.total || 0),
+      totalRevenue: Number(invoiceAgg?._sum?.total || 0),
+      paidRevenue: Number(invoiceAgg?._sum?.paidAmount || 0),
       branches: salon.branches?.length || 0
     }
   };
