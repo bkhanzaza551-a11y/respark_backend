@@ -494,6 +494,192 @@ superAdminRouter.get("/subscriptions", asyncHandler(async (req, res) => {
     orderBy: { startsAt: "desc" }
   }));
 }));
+
+superAdminRouter.get("/subscriptions/:id", asyncHandler(async (req, res) => {
+  const subscription = await prisma.subscription.findUnique({
+    where: { id: req.params.id },
+    include: {
+      salon: {
+        include: {
+          users: {
+            include: { user: true }
+          }
+        }
+      },
+      plan: true,
+      history: { orderBy: { createdAt: "desc" } }
+    }
+  });
+
+  if (!subscription) {
+    return res.status(404).json({ message: "Subscription not found" });
+  }
+
+  const ownerMembership = (subscription.salon?.users || []).find((u) => u.salonRole === "SALON_OWNER") || (subscription.salon?.users || [])[0] || null;
+  const owner = ownerMembership?.user || null;
+
+  return res.json({
+    ...subscription,
+    owner: owner ? { name: owner.name, email: owner.email, phone: owner.phone } : null
+  });
+}));
+
+superAdminRouter.post("/subscriptions/:id/change-plan", asyncHandler(async (req, res) => {
+  const { planId, timing, effectiveDate, reason } = req.body || {};
+  if (!planId) return res.status(400).json({ message: "Plan ID is required" });
+
+  const existing = await prisma.subscription.findUnique({
+    where: { id: req.params.id },
+    include: { plan: true, salon: true }
+  });
+  if (!existing) return res.status(404).json({ message: "Subscription not found" });
+
+  const nextPlan = await prisma.plan.findUnique({ where: { id: planId } });
+  if (!nextPlan) return res.status(404).json({ message: "Target plan not found" });
+
+  const oldYearly = toAmount(existing.plan?.yearlyPrice || (existing.plan?.monthlyPrice ? existing.plan.monthlyPrice * 12 : 0));
+  const newYearly = toAmount(nextPlan.yearlyPrice || (nextPlan.monthlyPrice ? nextPlan.monthlyPrice * 12 : 0));
+  const action = newYearly > oldYearly ? "UPGRADED" : newYearly < oldYearly ? "DOWNGRADED" : "PLAN_CHANGED";
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const updatedSub = await tx.subscription.update({
+      where: { id: req.params.id },
+      data: {
+        planId: nextPlan.id,
+        notes: reason ? `Plan changed to ${nextPlan.name}. Reason: ${reason}` : `Plan changed to ${nextPlan.name}`
+      }
+    });
+
+    if (nextPlan.featureFlags) {
+      await tx.salon.update({
+        where: { id: existing.salonId },
+        data: { featureFlags: nextPlan.featureFlags }
+      });
+    }
+
+    await tx.subscriptionHistory.create({
+      data: {
+        subscriptionId: existing.id,
+        action,
+        createdBy: req.user?.name || "Super Admin",
+        fromStatus: existing.status,
+        toStatus: existing.status,
+        fromPaymentStatus: existing.paymentStatus || "COMPLETED",
+        toPaymentStatus: "COMPLETED",
+        notes: `Plan changed: "${existing.plan?.name}" (₹${oldYearly}/yr) → "${nextPlan.name}" (₹${newYearly}/yr). Effective: ${effectiveDate || "immediately"}. Timing: ${timing || "IMMEDIATELY"}. Reason: ${reason || "N/A"}`
+      }
+    });
+
+    return tx.subscription.findUnique({
+      where: { id: existing.id },
+      include: {
+        salon: { include: { users: { include: { user: true } } } },
+        plan: true,
+        history: { orderBy: { createdAt: "desc" } }
+      }
+    });
+  });
+
+  return res.json({ success: true, subscription: updated });
+}));
+
+superAdminRouter.post("/subscriptions/:id/renew", asyncHandler(async (req, res) => {
+  const { months = 12, paymentMethod = "ONLINE", amount, notes } = req.body || {};
+
+  const existing = await prisma.subscription.findUnique({
+    where: { id: req.params.id },
+    include: { plan: true, salon: true }
+  });
+  if (!existing) return res.status(404).json({ message: "Subscription not found" });
+
+  const renewalBaseDate = new Date(existing.endsAt) > new Date() ? new Date(existing.endsAt) : new Date();
+  const nextEndsAt = new Date(renewalBaseDate);
+  nextEndsAt.setMonth(nextEndsAt.getMonth() + Number(months || 12));
+
+  const planAmount = amount != null ? Number(amount) : Number(existing.plan?.yearlyPrice || 44999);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: req.params.id },
+      data: {
+        status: "ACTIVE",
+        paymentStatus: "PAID",
+        endsAt: nextEndsAt,
+        notes: notes || `Renewed for ${months} month(s) on ${paymentMethod}`
+      }
+    });
+
+    await tx.subscriptionHistory.create({
+      data: {
+        subscriptionId: existing.id,
+        action: "RENEWED",
+        createdBy: req.user?.name || "Super Admin",
+        fromStatus: existing.status,
+        toStatus: "ACTIVE",
+        fromPaymentStatus: existing.paymentStatus || "PENDING",
+        toPaymentStatus: "PAID",
+        notes: `Subscription renewed for ₹${planAmount} (${months} months). Valid until ${nextEndsAt.toLocaleDateString()}. Notes: ${notes || "N/A"}`
+      }
+    });
+
+    return tx.subscription.findUnique({
+      where: { id: existing.id },
+      include: {
+        salon: { include: { users: { include: { user: true } } } },
+        plan: true,
+        history: { orderBy: { createdAt: "desc" } }
+      }
+    });
+  });
+
+  return res.json({ success: true, subscription: updated });
+}));
+
+superAdminRouter.post("/subscriptions/:id/extend-trial", asyncHandler(async (req, res) => {
+  const { days = 7, reason } = req.body || {};
+
+  const existing = await prisma.subscription.findUnique({
+    where: { id: req.params.id },
+    include: { plan: true, salon: true }
+  });
+  if (!existing) return res.status(404).json({ message: "Subscription not found" });
+
+  const baseDate = new Date(existing.endsAt) > new Date() ? new Date(existing.endsAt) : new Date();
+  const nextEndsAt = new Date(baseDate);
+  nextEndsAt.setDate(nextEndsAt.getDate() + Number(days));
+
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: req.params.id },
+      data: {
+        endsAt: nextEndsAt,
+        notes: reason ? `Trial extended by ${days} days. Reason: ${reason}` : `Trial extended by ${days} days`
+      }
+    });
+
+    await tx.subscriptionHistory.create({
+      data: {
+        subscriptionId: existing.id,
+        action: "TRIAL_EXTENDED",
+        createdBy: req.user?.name || "Super Admin",
+        fromStatus: existing.status,
+        toStatus: existing.status,
+        notes: `Trial extended by ${days} day(s). New expiry: ${nextEndsAt.toLocaleDateString()}. Reason: ${reason || "N/A"}`
+      }
+    });
+
+    return tx.subscription.findUnique({
+      where: { id: existing.id },
+      include: {
+        salon: { include: { users: { include: { user: true } } } },
+        plan: true,
+        history: { orderBy: { createdAt: "desc" } }
+      }
+    });
+  });
+
+  return res.json({ success: true, subscription: updated });
+}));
 superAdminRouter.patch("/subscriptions/:id", asyncHandler(async (req, res) => {
   const existing = await prisma.subscription.findUnique({
     where: { id: req.params.id },
