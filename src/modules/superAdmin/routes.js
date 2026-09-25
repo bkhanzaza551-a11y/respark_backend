@@ -697,14 +697,205 @@ superAdminRouter.post("/demo-leads/:id/send-purchase-link", asyncHandler(async (
   const checkoutLink = `${frontendUrl}/demo-checkout/${encodeURIComponent(lead.id)}/${encodeURIComponent(plan.id)}?finalPrice=${encodeURIComponent(price)}`;
   const money = `₹${price.toLocaleString("en-IN")}`;
 
+  const discountAmount = Math.max(0, basePrice - price);
+  const branchesText = (plan.branchLimit >= 9999 || !plan.branchLimit) ? "Unlimited Locations" : `${plan.branchLimit} Location${plan.branchLimit > 1 ? "s" : ""}`;
+  const usersText = (plan.userLimit >= 9999 || !plan.userLimit) ? "Unlimited Users" : `${plan.userLimit} Users`;
+  const customersText = (plan.customerLimit >= 99999 || !plan.customerLimit) ? "Unlimited Contacts" : `${Number(plan.customerLimit).toLocaleString("en-IN")} Contacts`;
+  const invoicesText = (plan.invoiceLimit >= 99999 || !plan.invoiceLimit) ? "Unlimited Receipts" : `${Number(plan.invoiceLimit).toLocaleString("en-IN")} Receipts`;
+
+  const emailSubject = `Official Subscription Invoice — ${plan.name} Plan (INR ${price.toLocaleString("en-IN")})`;
+  const emailText = [
+    `Hi ${lead.name || "there"},`,
+    "",
+    `Your official subscription invoice & checkout link for ${plan.name} is ready.`,
+    "",
+    `PLAN LEDGER: ${plan.name}`,
+    `----------------------------------------`,
+    `Billing Cycle: Annual (1 Year)`,
+    `Branches Allowed: ${branchesText}`,
+    `Stylist & Admin Accounts: ${usersText}`,
+    `CRM Client Limit: ${customersText}`,
+    `POS Invoices / year: ${invoicesText}`,
+    `Base Annual Fee: INR ${basePrice.toLocaleString("en-IN")}`,
+    ...(discountAmount > 0 ? [`Special Discount: - INR ${discountAmount.toLocaleString("en-IN")}`] : []),
+    `Setup Cost: ₹0 (Waived)`,
+    `----------------------------------------`,
+    `Grand Total Payable: INR ${price.toLocaleString("en-IN")} / year`,
+    "",
+    `Proceed to Secure Checkout:`,
+    `${checkoutLink}`,
+    "",
+    `Payments are securely processed via Razorpay. Workspace will be instantly provisioned upon payment.`,
+    "",
+    `Best regards,`,
+    `Salon Nest Team`
+  ].join("\n");
+
+  const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Official Subscription Invoice</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f6f8;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:620px;background-color:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background:linear-gradient(135deg, #0f766e 0%, #0d9488 100%);padding:30px 36px;color:#ffffff;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td>
+                    <div style="font-size:22px;font-weight:900;letter-spacing:-0.03em;color:#ffffff;">SALON NEST</div>
+                    <div style="font-size:12px;opacity:0.9;margin-top:3px;letter-spacing:0.06em;text-transform:uppercase;color:#ccfbf1;">Official Subscription Invoice</div>
+                  </td>
+                  <td align="right">
+                    <span style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.3);color:#ffffff;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:700;">
+                      Annual License
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Greeting -->
+          <tr>
+            <td style="padding:28px 36px 20px 36px;">
+              <h2 style="margin:0 0 10px 0;font-size:21px;color:#0f172a;font-weight:800;letter-spacing:-0.02em;">
+                Subscription Invoice Ready
+              </h2>
+              <p style="margin:0 0 16px 0;font-size:14px;color:#475569;line-height:1.65;">
+                Hi <strong>${lead.name || "there"}</strong>, your customized subscription plan invoice for <strong>${lead.company || lead.name || "your salon"}</strong> is ready. Please review the breakdown below and complete your secure checkout:
+              </p>
+            </td>
+          </tr>
+
+          <!-- Plan Ledger Card (Matches Exactly) -->
+          <tr>
+            <td style="padding:0 36px 26px 36px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;border-radius:16px;border:1px solid #e2e8f0;overflow:hidden;">
+                
+                <!-- Ledger Header -->
+                <tr>
+                  <td colspan="2" style="padding:16px 22px;border-bottom:1px solid #e2e8f0;background:#ffffff;">
+                    <span style="font-size:16px;font-weight:800;color:#0f172a;">Plan Ledger: ${plan.name}</span>
+                  </td>
+                </tr>
+
+                <!-- Details -->
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">Billing Cycle</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">Annual (1 Year)</td>
+                </tr>
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">Branches Allowed</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${branchesText}</td>
+                </tr>
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">Stylist & Admin Accounts</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${usersText}</td>
+                </tr>
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">CRM Client Limit</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${customersText}</td>
+                </tr>
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">POS Invoices / year</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${invoicesText}</td>
+                </tr>
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">Base Annual Fee</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:600;color:${discountAmount > 0 ? "#94a3b8;text-decoration:line-through;" : "#0f172a;"}border-bottom:1px solid #f1f5f9;">INR ${basePrice.toLocaleString("en-IN")}</td>
+                </tr>
+                ${discountAmount > 0 ? `
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #f1f5f9;">Special Discount</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#16a34a;border-bottom:1px solid #f1f5f9;">- INR ${discountAmount.toLocaleString("en-IN")}</td>
+                </tr>` : ""}
+                <tr>
+                  <td style="padding:13px 22px;font-size:13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Setup Cost</td>
+                  <td align="right" style="padding:13px 22px;font-size:13px;font-weight:700;color:#16a34a;border-bottom:1px solid #e2e8f0;">₹0 (Waived)</td>
+                </tr>
+                
+                <!-- Grand Total -->
+                <tr>
+                  <td style="padding:18px 22px;font-size:15px;font-weight:800;color:#0f172a;background:#ffffff;">Grand Total Payable:</td>
+                  <td align="right" style="padding:18px 22px;background:#ffffff;">
+                    <span style="font-size:22px;font-weight:900;color:#0f766e;letter-spacing:-0.02em;">INR ${price.toLocaleString("en-IN")}</span>
+                    <span style="font-size:13px;color:#64748b;font-weight:600;">/ year</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Primary CTA Button -->
+          <tr>
+            <td align="center" style="padding:0 36px 28px 36px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td align="center">
+                    <a href="${checkoutLink}" target="_blank" style="display:inline-block;width:100%;box-sizing:border-box;background:#0f766e;color:#ffffff;text-align:center;padding:16px 24px;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;letter-spacing:0.02em;box-shadow:0 6px 18px rgba(15,118,110,0.35);">
+                      Proceed to Secure Checkout &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <div style="font-size:12px;color:#94a3b8;margin-top:14px;line-height:1.5;">
+                If the button above does not open, copy & paste this secure link:<br/>
+                <a href="${checkoutLink}" style="color:#0f766e;word-break:break-all;text-decoration:underline;">${checkoutLink}</a>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Trust & Verification Footer -->
+          <tr>
+            <td style="background:#f8fafc;padding:22px 36px;border-top:1px solid #e2e8f0;border-bottom-left-radius:20px;border-bottom-right-radius:20px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="font-size:12px;color:#64748b;line-height:1.65;">
+                    🔒 <strong>Bank-Grade 256-Bit SSL:</strong> All cards, UPI (GPay/PhonePe), Netbanking supported via Razorpay.<br/>
+                    ⚡ <strong>Instant Provisioning:</strong> Salon database and owner workspace active immediately on payment.<br/>
+                    🧾 <strong>Tax Invoice:</strong> A digital GST tax receipt will be sent upon payment confirmation.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+
+        <!-- Copyright -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:620px;margin-top:20px;">
+          <tr>
+            <td align="center" style="font-size:12px;color:#94a3b8;line-height:1.6;">
+              © 2026 Salon Nest Platform. All rights reserved.<br/>
+              Questions? Reach us at <a href="mailto:support@salonnest.in" style="color:#64748b;text-decoration:underline;">support@salonnest.in</a>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
   let delivery = null;
   let emailError = null;
   try {
     delivery = await sendMail({
       to: lead.email,
-      subject: `Complete your purchase — ${plan.name} plan (${money})`,
-      text: `Hi ${lead.name || "there"},\n\nYour selected plan is ${plan.name} at ${money}.\n\nComplete your secure checkout here:\n${checkoutLink}\n\nThanks,\nSalon Nest`,
-      html: `<div style="font-family:Arial,sans-serif;padding:24px;background:#f7f4ef;color:#18212c;"><div style="max-width:620px;margin:0 auto;background:#fff;border-radius:24px;padding:28px;"><h2>Complete your purchase</h2><p>Hi ${lead.name || "there"},</p><p>Your selected plan is <strong>${plan.name}</strong> at <strong>${money}</strong>.</p><p><a href="${checkoutLink}" style="display:inline-block;background:#0f766e;color:#fff;padding:14px 18px;border-radius:999px;text-decoration:none;font-weight:700;">Proceed to secure checkout</a></p><p style="font-size:14px;color:#64748b;">If the button does not work, copy this link:<br>${checkoutLink}</p></div></div>`
+      subject: emailSubject,
+      text: emailText,
+      html: emailHtml
     });
   } catch (error) {
     emailError = error?.message || "Purchase link email failed";
