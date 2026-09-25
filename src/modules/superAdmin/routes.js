@@ -162,6 +162,8 @@ superAdminRouter.post("/salons", validate(schemas.salon), asyncHandler(async (re
           isActive: true
         }
       });
+    }
+
     // Auto-create a 1-year active subscription so salon is never locked out
     const defaultPlan = await tx.plan.findFirst({ orderBy: { yearlyPrice: "asc" } });
     if (defaultPlan) {
